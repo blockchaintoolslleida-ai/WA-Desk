@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from routers import auth, conversations, messages, webhook, dashboard, agents, setup, cases, media, contacts, window, admin_platform, templates
+from routers import auth, conversations, messages, webhook, dashboard, agents, setup, cases, media, contacts, window, admin_platform, templates, contacts_import
 
 app = FastAPI(
     title="WhatsApp Business Desk",
@@ -362,6 +362,7 @@ api_router.include_router(window.router)
 api_router.include_router(admin_platform.router)
 api_router.include_router(templates.router)
 api_router.include_router(setup.router)
+api_router.include_router(contacts_import.router)
 
 app.include_router(api_router)
 

@@ -663,7 +663,19 @@ CREATE TABLE IF NOT EXISTS contacts (
     phone TEXT,
     email TEXT,
     notes TEXT,
+    source TEXT DEFAULT '',
     tenant_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    service TEXT NOT NULL,
+    encrypted_access_token TEXT,
+    encrypted_refresh_token TEXT,
+    token_expires_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -919,6 +931,7 @@ def _migrate_schema(conn):
         "ALTER TABLE whatsapp_accounts ADD COLUMN openwa_server_url TEXT DEFAULT ''",
         "ALTER TABLE whatsapp_accounts ADD COLUMN openwa_session_id TEXT DEFAULT ''",
         "ALTER TABLE whatsapp_secrets ADD COLUMN encrypted_openwa_api_key TEXT",
+        "ALTER TABLE contacts ADD COLUMN source TEXT DEFAULT ''",
     ]
     for sql in migrations:
         try:

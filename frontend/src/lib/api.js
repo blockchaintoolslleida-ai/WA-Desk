@@ -118,6 +118,11 @@ export const adminApi = {
   assignTenantUser: (id, data) => api.post(`/admin/tenants/${id}/users`, data),
   removeTenantUser: (tenantId, userId) => api.delete(`/admin/tenants/${tenantId}/users/${userId}`),
   deleteUser: (id) => api.delete(`/admin/users/${id}`),
+  // Contacts import
+  contactsAuthStatus: () => api.get('/admin/contacts/auth-status'),
+  contactsAuthGoogle: () => api.get('/admin/contacts/auth/google'),
+  contactsListGoogle: () => api.get('/admin/contacts/list/google'),
+  contactsImport: (contacts) => api.post('/admin/contacts/import', { contacts }),
 };
 
 export default api;
