@@ -76,19 +76,6 @@ agenthub/agents/youtube/db
 # Build caches
 .cache/
 
-# Mobile development
-android-sdk/ frontend/node_modules/.cache/default-development/0.pack
-frontend/node_modules/.cache/default-development/5.pack
-frontend/node_modules/.cache/default-development/0.pack
-frontend/node_modules/.cache/default-development/2.pack
-frontend/node_modules/.cache/default-development/4.pack
-frontend/node_modules/.cache/default-development/4.pack
-frontend/node_modules/.cache/default-development/1.pack
-frontend/node_modules/.cache/default-development/3.pack
-frontend/node_modules/.cache/default-development/8.pack
-frontend/node_modules/.cache/default-development/11.pack
-memory/test_credentials.md
--e 
 # Environment and credential files
 .env
 .env.*
@@ -97,9 +84,31 @@ credentials.json
 *.pem
 *.key
 .credentials
+memory/test_credentials.md
 
 # Local database and media files (SQLite)
 backend/local.db
+backend/local.db-wal
+backend/local.db-shm
+backend/media_files/
+
+# Frontend build and cache
+frontend/build/
+frontend/node_modules/.cache/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Old Supabase migrations (no longer needed)
+backend/supabase_*.sql
+
+# Test reports (generated)
+test_reports/iteration_*.json
+test_reports/pytest/
+
+# Emergent platform files
+.emergent/
 backend/local.db-wal
 backend/local.db-shm
 backend/media_files/
