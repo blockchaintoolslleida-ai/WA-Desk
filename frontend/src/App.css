@@ -1,0 +1,86 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-main: #F8FAFC;
+  --bg-surface: #FFFFFF;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #64748B;
+  --border: #E2E8F0;
+  --unread: #2563EB;
+  --primary: #0F172A;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: var(--bg-main);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Manrope', sans-serif;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #94A3B8;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #64748B;
+}
+
+/* Status badge colors */
+.badge-nuevo { background: #DBEAFE; color: #1E40AF; border: 1px solid #BFDBFE; }
+.badge-por_atender { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+.badge-en_atencion { background: #D1FAE5; color: #065F46; border: 1px solid #A7F3D0; }
+.badge-esperando_cliente { background: #FFEDD5; color: #9A3412; border: 1px solid #FED7AA; }
+.badge-resuelto { background: #F1F5F9; color: #475569; border: 1px solid #E2E8F0; }
+.badge-cerrado { background: #E2E8F0; color: #334155; border: 1px solid #CBD5E1; }
+
+/* Chat bubble styles */
+.bubble-incoming {
+  background: #F1F5F9;
+  color: #0F172A;
+  border-radius: 2px 12px 12px 12px;
+}
+.bubble-outgoing {
+  background: #0F172A;
+  color: #FFFFFF;
+  border-radius: 12px 2px 12px 12px;
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}

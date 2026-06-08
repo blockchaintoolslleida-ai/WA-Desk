@@ -1,0 +1,87 @@
+{
+  "summary": "Window 24h messaging feature testing completed. Backend: 10/11 tests passed (91%). Frontend: All window features working correctly including badge display, expired window bar, template modal, and i18n translations.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/templates/send/{conversation_id}",
+        "issue": "Returns 500 instead of 404 when conversation_id doesn't exist. The .single() Supabase call throws an exception instead of returning None.",
+        "priority": "LOW"
+      }
+    ]
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+
+  "passed_tests": {
+    "backend": [
+      "GET /api/window/status/{conversation_id} - Returns all required fields (window_active, window_expires_at, seconds_remaining, hours_remaining, minutes_remaining, last_customer_message_at)",
+      "GET /api/window/status/{conversation_id} - Unauthenticated request rejected (401)",
+      "GET /api/window/status/{conversation_id} - Invalid conversation returns window_active=false",
+      "GET /api/templates - Returns list of templates with id, name, languages, variables",
+      "GET /api/templates - Unauthenticated request rejected (401)",
+      "POST /api/templates/send/{conversation_id} - Successfully sends template and saves message in messages table",
+      "POST /api/templates/send/{conversation_id} - Invalid template_id returns 404",
+      "POST /api/templates/send/{conversation_id} - Unauthenticated request rejected (401)",
+      "GET /api/conversations - Includes window object with window_active and seconds_remaining",
+      "GET /api/conversations/{id} - Includes window object with full status"
+    ],
+    "frontend": [
+      "Conversation list shows window indicator badges (green for active, red for expired)",
+      "Window badge in chat header shows countdown (e.g., '20h 09m') for active windows",
+      "Window badge shows 'Finestra tancada' (CA) / 'Ventana cerrada' (ES) / 'Window closed' (EN) for expired",
+      "Active window: Message input and attach button visible",
+      "Expired window: Warning bar visible with 'Finestra de 24h expirada' message",
+      "Expired window: 'Enviar plantilla' button visible in warning bar",
+      "Template modal opens with template selector dropdown",
+      "Template modal shows customer name input field (pre-filled with contact name)",
+      "Template modal shows preview of template with variables replaced",
+      "Template modal shows cost warning 'Aquest missatge tindrà cost'",
+      "i18n CA: 'Finestra tancada', 'Finestra de 24h expirada', 'Enviar plantilla'",
+      "i18n ES: 'Ventana cerrada', 'Ventana de 24h expirada', 'Enviar plantilla'",
+      "i18n EN: 'Window closed', '24h window expired', 'Send template'"
+    ]
+  },
+
+  "test_report_links": [
+    "/app/backend/tests/test_window_api.py",
+    "/app/test_reports/pytest/window_api_results.xml"
+  ],
+
+  "action_items": [
+    "Minor: Fix POST /api/templates/send/{conversation_id} to return 404 instead of 500 for non-existent conversation (use .maybe_single() or handle exception)"
+  ],
+
+  "critical_code_review_comments": [],
+
+  "updated_files": [
+    "/app/backend/tests/test_window_api.py"
+  ],
+
+  "success_rate": {
+    "backend": "91% (10/11 tests passed)",
+    "frontend": "100% (all window features working)"
+  },
+
+  "test_credentials": {
+    "admin_email": "admin@workshoppartsdesk.com",
+    "admin_password": "Admin123!"
+  },
+
+  "seed_data_creation": "Template message sent during testing to Botiga conversation (visible in messages)",
+
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "note": "All APIs use real Supabase database. WhatsApp template API may fail (template not approved in Meta) but fallback to text message works."
+  },
+
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "Window 24h feature fully tested. Active windows show green badge with countdown, expired windows show red badge and warning bar with template button. Template modal works correctly with preview and cost warning. i18n verified for CA/ES/EN. One minor backend issue: POST /api/templates/send returns 500 instead of 404 for non-existent conversation."
+}

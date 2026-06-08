@@ -1,0 +1,81 @@
+{
+  "theme": "LIGHT",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "typography": {
+    "heading_font": "Manrope",
+    "body_font": "IBM Plex Sans",
+    "scale": {
+      "h1": "text-4xl sm:text-5xl tracking-tight font-black",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-bold",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm",
+      "overline": "uppercase text-xs tracking-[0.2em] font-bold"
+    }
+  },
+  "colors": {
+    "background": {
+      "main": "#F8FAFC",
+      "surface": "#FFFFFF",
+      "glass": "bg-white/70 backdrop-blur-xl"
+    },
+    "text": {
+      "primary": "#0F172A",
+      "secondary": "#475569",
+      "muted": "#94A3B8"
+    },
+    "primary": "#0F172A",
+    "secondary": "#E2E8F0",
+    "badges": {
+      "nuevo": { "bg": "#DBEAFE", "text": "#1E40AF", "border": "#BFDBFE" },
+      "por_atender": { "bg": "#FEF3C7", "text": "#92400E", "border": "#FDE68A" },
+      "en_atencion": { "bg": "#D1FAE5", "text": "#065F46", "border": "#A7F3D0" },
+      "esperando_cliente": { "bg": "#FFEDD5", "text": "#9A3412", "border": "#FED7AA" },
+      "resuelto": { "bg": "#F1F5F9", "text": "#475569", "border": "#E2E8F0" },
+      "cerrado": { "bg": "#E2E8F0", "text": "#334155", "border": "#CBD5E1" }
+    },
+    "border": "#E2E8F0",
+    "unread_indicator": "#2563EB"
+  },
+  "layout": {
+    "style": "Control Room Grid (Dashboard)",
+    "structure": "3-column layout (Left: 320px | Middle: 1fr | Right: 320px)",
+    "spacing": "Dense and compact. Use p-4 to p-6 inside cards. gap-4 for grids.",
+    "borders": "1px solid #E2E8F0, rounded-md (max 8px border-radius). Avoid soft UI/shadows. Go for crisp, technical borders."
+  },
+  "components": {
+    "navigation": "Sidebar or top navigation utilizing solid white background and 1px bottom/right border.",
+    "cards": "Flat background (bg-white), 1px subtle border, no shadow by default. Hover: slight lift and shadow-md.",
+    "chat_bubbles": "Incoming: bg-slate-100 text-slate-900. Outgoing: bg-slate-900 text-white.",
+    "inputs": "Shadcn UI inputs with square-ish corners (rounded-md), focus:ring-2 focus:ring-slate-900.",
+    "tables": "Zebra striping optional, strictly left-aligned text, right-aligned numbers."
+  },
+  "motion": {
+    "hover": "Subtle background shifts (e.g., bg-slate-50 to bg-slate-100) and border darkening. Buttons get slight scale-down or shadow.",
+    "transitions": "transition-all duration-200 ease-in-out"
+  },
+  "icons_and_assets": {
+    "icon_library": "@phosphor-icons/react",
+    "images": {
+      "empty_state_dashboard": "https://images.pexels.com/photos/8092309/pexels-photo-8092309.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "avatar_placeholder_1": "https://images.pexels.com/photos/36535613/pexels-photo-36535613.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "avatar_placeholder_2": "https://images.pexels.com/photos/6146051/pexels-photo-6146051.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+    }
+  },
+  "accessibility": {
+    "contrast": "Ensure all text, especially badges, meet WCAG AA contrast against their backgrounds.",
+    "data_testids": "All interactive elements (buttons, inputs, tabs, chat items) MUST have descriptive data-testid attributes (e.g., data-testid='chat-item-nuevo')."
+  },
+  "instructions_to_main_agent": [
+    "Build a 3-column layout: Conversation List (left), Active Chat (center), Detail/Agent Panel (right).",
+    "Implement states (nuevo, por_atender, en_atencion, esperando_cliente, resuelto, cerrado) strictly using the color definitions from the badges section.",
+    "Use Manrope for headings and IBM Plex Sans for body. Do NOT use Inter.",
+    "Keep the UI 'cardless' or use very flat cards with sharp 1px borders (rounded-md, max 8px). Do NOT use heavy shadows.",
+    "Highlight unread messages clearly (e.g., bolder font, blue unread dot, background highlight).",
+    "Ensure timestamps are legible (e.g., 12:45 PM, Today).",
+    "Create a clean, sober, and business-oriented interface prioritizing speed and readability.",
+    "Provide specific data-testids for all major actionable elements.",
+    "Use standard .js and .jsx extensions for all files, avoiding .tsx.",
+    "All main components should follow Shadcn UI structure but custom tailored to matching the Swiss layout theme."
+  ]
+}
