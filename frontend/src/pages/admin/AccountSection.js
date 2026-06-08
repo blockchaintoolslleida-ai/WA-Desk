@@ -15,6 +15,7 @@ export default function AccountSection({ t, locale }) {
   const [showCert, setShowCert] = useState(false);
   const [secrets, setSecrets] = useState(null);
   const [showWizard, setShowWizard] = useState(null);
+  const [tenantName, setTenantName] = useState('');
 
   const load = async () => {
     let acc = null;
@@ -28,6 +29,11 @@ export default function AccountSection({ t, locale }) {
       const sRes = await adminApi.getSecrets();
       sec = sRes.data?.secrets;
       setSecrets(sec);
+    } catch {}
+    // Load tenant name
+    try {
+      const tRes = await adminApi.getMyTenant();
+      if (tRes.data?.tenant) setTenantName(tRes.data.tenant.name);
     } catch {}
 
     if (acc) {
@@ -147,7 +153,10 @@ export default function AccountSection({ t, locale }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold text-[#0F172A]" style={{ fontFamily: 'Manrope' }}>{t('admin.account.title')}</h2>
+        <div>
+          <h2 className="text-base font-bold text-[#0F172A]" style={{ fontFamily: 'Manrope' }}>{t('admin.account.title')}</h2>
+          {tenantName && <p className="text-xs text-[#64748B] mt-0.5">{t('admin.companies.name') || 'Empresa'}: <span className="font-medium text-[#0F172A]">{tenantName}</span></p>}
+        </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={account.connection_status} t={t} />
           <StatusBadge status={account.token_status} t={t} />
