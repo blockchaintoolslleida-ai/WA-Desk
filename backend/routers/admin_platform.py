@@ -584,3 +584,98 @@ async def get_audit_logs(
         r['action_type'] = r.get('action_type') or r.get('action') or ''
         logs.append(r)
     return logs
+
+
+# ──────────────── Super Admin: Company Management ────────────────
+
+def require_super_admin(user: dict):
+    if user.get('role') != 'super_admin':
+        raise HTTPException(status_code=403, detail="Només el superadministrador pot fer aquesta acció")
+
+
+@router.get("/tenants")
+async def list_tenants(authorization: Optional[str] = Header(None)):
+    """List all companies/tenants — super_admin only"""
+    user = await get_admin_user(authorization)
+    require_super_admin(user)
+    supabase = get_supabase_admin()
+
+    tenants = supabase.table('tenants').select('*').order('created_at', desc=True).execute()
+    result = []
+    for t in (tenants.data or []):
+        # Count users per tenant
+        users = supabase.table('profiles').select('id', count='exact').eq('tenant_id', t['id']).execute()
+        accounts = supabase.table('whatsapp_accounts').select('id').eq('tenant_id', t['id']).limit(1).execute()
+        t['user_count'] = users.count if users.count else 0
+        t['has_whatsapp'] = bool(accounts.data)
+        result.append(t)
+    return result
+
+
+@router.delete("/tenants/{tenant_id}")
+async def delete_tenant(tenant_id: str, authorization: Optional[str] = Header(None)):
+    """Delete a company and all associated data — super_admin only"""
+    user = await get_admin_user(authorization)
+    require_super_admin(user)
+    supabase = get_supabase_admin()
+
+    # Verify tenant exists
+    tenant = supabase.table('tenants').select('id,name').eq('id', tenant_id).single().execute()
+    if not tenant.data:
+        raise HTTPException(status_code=404, detail="Empresa no trobada")
+
+    tenant_name = tenant.data.get('name', tenant_id)
+
+    # Cascade delete: whatsapp_secrets → whatsapp_accounts → conversations → messages → contacts → profiles → tenant
+    account = supabase.table('whatsapp_accounts').select('id').eq('tenant_id', tenant_id).limit(1).execute()
+    if account.data:
+        acc_id = account.data[0]['id']
+        supabase.table('whatsapp_secrets').delete().eq('whatsapp_account_id', acc_id).execute()
+        supabase.table('whatsapp_webhook_logs').delete().eq('whatsapp_account_id', acc_id).execute()
+        supabase.table('whatsapp_api_logs').delete().eq('whatsapp_account_id', acc_id).execute()
+        supabase.table('whatsapp_accounts').delete().eq('id', acc_id).execute()
+
+    # Delete conversations and messages for this tenant
+    convs = supabase.table('conversations').select('id').eq('tenant_id', tenant_id).execute()
+    for c in (convs.data or []):
+        supabase.table('case_events').delete().eq('case_id', supabase.table('cases').select('id').eq('conversation_id', c['id']).execute().data[0]['id'] if supabase.table('cases').select('id').eq('conversation_id', c['id']).execute().data else None).execute() if False else None
+        # Quick cascade
+        cases_res = supabase.table('cases').select('id').eq('conversation_id', c['id']).execute()
+        for cs in (cases_res.data or []):
+            supabase.table('case_events').delete().eq('case_id', cs['id']).execute()
+            supabase.table('case_notes').delete().eq('case_id', cs['id']).execute()
+            supabase.table('case_views').delete().eq('case_id', cs['id']).execute()
+        supabase.table('cases').delete().eq('conversation_id', c['id']).execute()
+        supabase.table('messages').delete().eq('conversation_id', c['id']).execute()
+    supabase.table('conversations').delete().eq('tenant_id', tenant_id).execute()
+    supabase.table('contacts').delete().eq('tenant_id', tenant_id).execute()
+
+    # Clear tenant_id from profiles (don't delete users, just unlink)
+    supabase.table('profiles').update({'tenant_id': None}).eq('tenant_id', tenant_id).execute()
+    supabase.table('audit_logs').delete().eq('tenant_id', tenant_id).execute()
+    supabase.table('tenants').delete().eq('id', tenant_id).execute()
+
+    await log_audit(tenant_id, user['id'], 'delete_tenant', 'tenant', tenant_id, f"Empresa '{tenant_name}' eliminada pel superadmin")
+    return {"ok": True, "deleted": tenant_name}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: str, authorization: Optional[str] = Header(None)):
+    """Delete any user — super_admin only"""
+    user = await get_admin_user(authorization)
+    require_super_admin(user)
+    supabase = get_supabase_admin()
+
+    target = supabase.table('profiles').select('id,full_name,role,email').eq('id', user_id).single().execute()
+    if not target.data:
+        raise HTTPException(status_code=404, detail="Usuari no trobat")
+
+    if target.data['id'] == user['id']:
+        raise HTTPException(status_code=400, detail="No et pots eliminar a tu mateix")
+
+    target_name = target.data.get('full_name', target.data.get('email', user_id))
+    supabase.table('profiles').delete().eq('id', user_id).execute()
+
+    await log_audit(user.get('tenant_id'), user['id'], 'delete_user', 'profiles', user_id,
+                    f"Usuari '{target_name}' eliminat pel superadmin")
+    return {"ok": True, "deleted": target_name}

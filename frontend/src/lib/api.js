@@ -110,6 +110,10 @@ export const adminApi = {
   getWebhookInfo: () => api.get('/admin/webhook-info'),
   verifyWebhook: () => api.post('/admin/webhook-info/verify'),
   getAuditLogs: (limit = 50) => api.get(`/admin/audit-logs?limit=${limit}`),
+  // Super admin: company management
+  getTenants: () => api.get('/admin/tenants'),
+  deleteTenant: (id) => api.delete(`/admin/tenants/${id}`),
+  deleteUser: (id) => api.delete(`/admin/users/${id}`),
 };
 
 export default api;

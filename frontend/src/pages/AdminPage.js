@@ -4,13 +4,14 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import AppHeader from '../components/AppHeader';
 import { adminApi } from '../lib/api';
-import { Gear, LinkSimple, ClockCounterClockwise, CheckCircle, XCircle, CaretRight, ArrowLeft, ChatText } from '@phosphor-icons/react';
+import { Gear, LinkSimple, ClockCounterClockwise, CheckCircle, XCircle, CaretRight, ArrowLeft, ChatText, Buildings } from '@phosphor-icons/react';
 
 import AccountSection from './admin/AccountSection';
 import TemplatesSection from './admin/TemplatesSection';
 import WebhookSection from './admin/WebhookSection';
 import AuditSection from './admin/AuditSection';
 import TenantSetupForm from './admin/TenantSetupForm';
+import CompaniesSection from './admin/CompaniesSection';
 
 const NAV_ITEMS = [
   { id: 'account', icon: Gear, key: 'admin.nav.account' },
@@ -21,7 +22,7 @@ const NAV_ITEMS = [
 
 export default function AdminPage() {
   const { t, locale } = useTranslation();
-  const { profile } = useAuth();
+  const { profile, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const [section, setSection] = useState('account');
   const [setupReady, setSetupReady] = useState(null);
@@ -83,6 +84,19 @@ export default function AdminPage() {
                 {section === item.id && <CaretRight size={12} className="ml-auto" weight="bold" />}
               </button>
             ))}
+            {isSuperAdmin && (
+              <button data-testid="admin-nav-companies"
+                onClick={() => setSection('companies')}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
+                  section === 'companies'
+                    ? 'bg-[#0F172A] text-white font-medium'
+                    : 'text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A]'
+                }`}>
+                <Buildings size={16} weight={section === 'companies' ? 'bold' : 'regular'} />
+                {t('admin.nav.companies') || 'Empreses'}
+                {section === 'companies' && <CaretRight size={12} className="ml-auto" weight="bold" />}
+              </button>
+            )}
           </nav>
           <div className="p-2 border-t border-[#E2E8F0]">
             <button data-testid="back-to-inbox" onClick={() => navigate('/')}
@@ -126,6 +140,7 @@ export default function AdminPage() {
               {section === 'templates' && <TemplatesSection t={t} />}
               {section === 'webhook' && <WebhookSection t={t} />}
               {section === 'logs' && <AuditSection t={t} locale={locale} />}
+              {section === 'companies' && <CompaniesSection t={t} />}
             </div>
           )}
         </main>

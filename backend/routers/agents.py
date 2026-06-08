@@ -179,11 +179,16 @@ async def delete_agent(agent_id: str, authorization: Optional[str] = Header(None
         if agent_id == user['id']:
             raise HTTPException(status_code=400, detail="No et pots eliminar a tu mateix")
 
-        supabase.table('profiles').update({
-            'is_active': False
-        }).eq('id', agent_id).execute()
-
-        return {"ok": True, "deactivated": True}
+        if user['role'] == 'super_admin':
+            # Hard delete by super_admin
+            supabase.table('profiles').delete().eq('id', agent_id).execute()
+            return {"ok": True, "deleted": True, "hard": True}
+        else:
+            # Soft delete by admin
+            supabase.table('profiles').update({
+                'is_active': False
+            }).eq('id', agent_id).execute()
+            return {"ok": True, "deactivated": True}
 
     except HTTPException:
         raise
