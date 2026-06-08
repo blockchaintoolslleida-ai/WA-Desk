@@ -458,8 +458,8 @@ export default function ChatView({
                   {/* Media content */}
                   {hasMedia && <MediaContent msg={msg} isOut={isOut} />}
 
-                  {/* Text body (hide if it's just the filename and we already show the doc) */}
-                  {msg.body && !(hasMedia && msg.message_type === 'document' && !msg.body.includes(' ')) && (
+                  {/* Text body — hide if media is showing (only show real captions, not placeholders) */}
+                  {msg.body && !(hasMedia && /^\[/.test(msg.body)) && (
                     <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
                   )}
 

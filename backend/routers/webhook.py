@@ -282,41 +282,79 @@ def _get_openwa_creds_for_session(session_id: str) -> dict:
 # ── OpenWA Media Download ─────────────────────────────────────
 
 async def _download_openwa_media(server_url: str, api_key: str, session_id: str,
-                                  msg_id: str, media_type: str) -> Optional[str]:
-    """Download media from OpenWA and store locally. Returns local URL or None."""
+                                  msg_id: str, media_type: str, raw_data: dict = None) -> Optional[str]:
+    """Download/extract media from OpenWA and store locally. Returns local URL or None.
+
+    Tries multiple approaches:
+    1. Extract base64 from webhook _data.body if present
+    2. Try OpenWA media endpoint
+    3. Try OpenWA message detail endpoint
+    """
     import uuid as _uuid
-    try:
-        # Try OpenWA media endpoint
-        url = f"{server_url.rstrip('/')}/api/sessions/{session_id}/messages/{msg_id}/media"
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(url, headers={"X-API-Key": api_key})
+    import base64
 
-        if resp.status_code != 200:
-            # Fallback: try to get media via base64 from message data endpoint
-            # Not all OpenWA versions support this — just return None
-            return None
+    media_bytes = None
+    mime_type = 'application/octet-stream'
 
-        content_type = resp.headers.get('content-type', 'application/octet-stream')
-        ext_map = {
-            'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp',
-            'audio/ogg': '.ogg', 'audio/mp4': '.m4a', 'audio/mpeg': '.mp3',
-            'video/mp4': '.mp4', 'application/pdf': '.pdf',
-        }
-        ext = ext_map.get(content_type, '.bin')
+    # Approach 1: Extract base64 from webhook payload (OpenWA sends media in data.media.data)
+    if raw_data:
+        media_obj = raw_data.get('media', {})
+        if isinstance(media_obj, dict):
+            b64 = media_obj.get('data', '')
+            mime = media_obj.get('mimetype', '')
+            if b64 and isinstance(b64, str) and len(b64) > 100:
+                try:
+                    # Handle padding for URL-safe base64
+                    padding = 4 - len(b64) % 4
+                    if padding != 4:
+                        b64 += '=' * padding
+                    media_bytes = base64.b64decode(b64)
+                    mime_type = mime or mime_type
+                    logger.info(f"Extracted base64 media from webhook media.data: {len(media_bytes)} bytes, {mime_type}")
+                except Exception as e:
+                    logger.warning(f"Base64 decode failed: {e}")
 
-        # Store in local media directory
-        media_dir = Path(__file__).parent.parent / "media_files" / "media" / "incoming"
-        media_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"{_uuid.uuid4().hex}{ext}"
-        filepath = media_dir / filename
-        filepath.write_bytes(resp.content)
+    # Approach 2: Try OpenWA media endpoint
+    if not media_bytes:
+        try:
+            for path in [
+                f"/api/sessions/{session_id}/messages/{msg_id}/media",
+                f"/api/sessions/{session_id}/media/{msg_id}",
+            ]:
+                url = f"{server_url.rstrip('/')}{path}"
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.get(url, headers={"X-API-Key": api_key})
+                if resp.status_code == 200 and len(resp.content) > 100:
+                    media_bytes = resp.content
+                    mime_type = resp.headers.get('content-type', mime_type)
+                    logger.info(f"Downloaded media from OpenWA: {len(media_bytes)} bytes via {path}")
+                    break
+        except Exception:
+            pass
 
-        base_url = os.environ.get('BASE_URL', 'http://localhost:8000')
-        return f"{base_url}/api/media/files/incoming/{filename}"
-
-    except Exception as e:
-        logger.warning(f"OpenWA media download failed (non-fatal): {e}")
+    if not media_bytes:
         return None
+
+    # Save to local file
+    ext_map = {
+        'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp',
+        'image/gif': '.gif',
+        'audio/ogg': '.ogg', 'audio/mp4': '.m4a', 'audio/mpeg': '.mp3', 'audio/webm': '.weba',
+        'video/mp4': '.mp4', 'video/webm': '.webm',
+        'application/pdf': '.pdf', 'application/zip': '.zip',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+    }
+    ext = ext_map.get(mime_type, '.bin')
+
+    media_dir = Path(__file__).parent.parent / "media_files" / "media" / "incoming"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{_uuid.uuid4().hex}{ext}"
+    filepath = media_dir / filename
+    filepath.write_bytes(media_bytes)
+
+    base_url = os.environ.get('BASE_URL', 'http://localhost:8000')
+    return f"{base_url}/api/media/files/incoming/{filename}"
 
 
 # ── OpenWA LID Resolver ────────────────────────────────────────
@@ -410,8 +448,9 @@ async def receive_openwa_webhook(request: Request):
     try:
         payload = await request.json()
         session_id = payload.get('sessionId', '')
-        logger.info(f"OpenWA webhook received: event={payload.get('event')}, session={session_id}")
         data = payload.get('data', {})
+        msg_type = data.get('type', 'chat')
+        logger.info(f"OpenWA webhook: event={payload.get('event')} type={msg_type} hasMedia={data.get('hasMedia')} keys={list(data.keys())} media_keys={list(data.get('media', {}).keys()) if isinstance(data.get('media'), dict) else type(data.get('media')).__name__} media={str(data.get('media'))[:300]}")
 
         # Only handle message.received events
         if payload.get('event') != 'message.received':
@@ -485,16 +524,18 @@ async def receive_openwa_webhook(request: Request):
             if ow_creds:
                 media_url = await _download_openwa_media(
                     ow_creds['server_url'], ow_creds['api_key'],
-                    ow_creds['session_id'], msg_id, media_type
+                    ow_creds['session_id'], msg_id, media_type,
+                    raw_data=data  # Pass webhook data for base64 extraction
                 )
+            # Fallback: always set a proxy URL so frontend can try to display media
+            if not media_url:
+                base_url = os.environ.get('BASE_URL', 'http://localhost:8000')
+                media_url = f"{base_url}/api/media/openwa/{session_id}/{msg_id}"
 
-            # Get caption or set placeholder
+            # Get caption if present, otherwise leave body empty (media speaks for itself)
             caption = data.get('caption', '') or data.get('body', '')
-            if caption and caption != body:
+            if caption:
                 body = caption
-            if not body:
-                type_labels = {'image': '[Imatge]', 'video': '[Vídeo]', 'audio': '[Àudio]', 'document': '[Document]', 'sticker': '[Sticker]'}
-                body = type_labels.get(media_type, f'[{media_type.upper()}]')
 
         # Deduplicate
         dedup_key = f"openwa_{msg_id}"
