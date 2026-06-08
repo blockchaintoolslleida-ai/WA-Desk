@@ -5,6 +5,9 @@ from fastapi import APIRouter, HTTPException, Request, Query
 from fastapi.responses import PlainTextResponse
 import logging
 import os
+import httpx
+from pathlib import Path
+from typing import Optional
 from datetime import datetime, timezone
 import uuid
 from database import get_supabase_admin
@@ -197,12 +200,17 @@ async def process_inbound_message(message, recv_phone_id=None, tenant_id=None):
             needs_classification = True
 
         # Insert message
-        # If media, download from WhatsApp and store in Supabase Storage
+        # If media, download from WhatsApp and store locally
         stored_media_url = message.media_url
         if message.media_type and message.media_url:
-            public_url = await process_incoming_media(message.media_url)
-            if public_url:
-                stored_media_url = public_url
+            # For OpenWA: media is already a local URL (downloaded by _download_openwa_media)
+            # For Meta: media_url is a WhatsApp media ID, needs download
+            if message.media_url.startswith('http'):
+                stored_media_url = message.media_url  # Already a local URL
+            else:
+                public_url = await process_incoming_media(message.media_url)
+                if public_url:
+                    stored_media_url = public_url
 
         msg_data = {
             'id': str(uuid.uuid4()),
@@ -237,6 +245,78 @@ async def whatsapp_status():
         "phone_number_id": WHATSAPP_PHONE_NUMBER_ID[:6] + "..." if WHATSAPP_PHONE_NUMBER_ID else None,
         "webhook_url": "/api/whatsapp/webhook"
     }
+
+
+def _get_openwa_creds_for_session(session_id: str) -> dict:
+    """Get OpenWA credentials (server_url, api_key, session_id) for a session."""
+    try:
+        sb = get_supabase_admin()
+        acc = sb.table('whatsapp_accounts').select(
+            'id, openwa_server_url, openwa_session_id'
+        ).eq('openwa_session_id', session_id).eq('connection_type', 'openwa').limit(1).execute()
+        if not acc.data:
+            return None
+
+        server_url = acc.data[0].get('openwa_server_url', '')
+        acc_id = acc.data[0].get('id', '')
+
+        secrets = sb.table('whatsapp_secrets').select('encrypted_openwa_api_key').eq(
+            'whatsapp_account_id', acc_id).limit(1).execute()
+        if not secrets.data or not secrets.data[0].get('encrypted_openwa_api_key'):
+            return None
+
+        api_key = decrypt_value(secrets.data[0]['encrypted_openwa_api_key'])
+        if not api_key:
+            return None
+
+        return {
+            'server_url': server_url,
+            'api_key': api_key,
+            'session_id': session_id,
+        }
+    except Exception as e:
+        logger.warning(f"Failed to get OpenWA creds for session {session_id}: {e}")
+        return None
+
+
+# ── OpenWA Media Download ─────────────────────────────────────
+
+async def _download_openwa_media(server_url: str, api_key: str, session_id: str,
+                                  msg_id: str, media_type: str) -> Optional[str]:
+    """Download media from OpenWA and store locally. Returns local URL or None."""
+    import uuid as _uuid
+    try:
+        # Try OpenWA media endpoint
+        url = f"{server_url.rstrip('/')}/api/sessions/{session_id}/messages/{msg_id}/media"
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(url, headers={"X-API-Key": api_key})
+
+        if resp.status_code != 200:
+            # Fallback: try to get media via base64 from message data endpoint
+            # Not all OpenWA versions support this — just return None
+            return None
+
+        content_type = resp.headers.get('content-type', 'application/octet-stream')
+        ext_map = {
+            'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp',
+            'audio/ogg': '.ogg', 'audio/mp4': '.m4a', 'audio/mpeg': '.mp3',
+            'video/mp4': '.mp4', 'application/pdf': '.pdf',
+        }
+        ext = ext_map.get(content_type, '.bin')
+
+        # Store in local media directory
+        media_dir = Path(__file__).parent.parent / "media_files" / "media" / "incoming"
+        media_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{_uuid.uuid4().hex}{ext}"
+        filepath = media_dir / filename
+        filepath.write_bytes(resp.content)
+
+        base_url = os.environ.get('BASE_URL', 'http://localhost:8000')
+        return f"{base_url}/api/media/files/incoming/{filename}"
+
+    except Exception as e:
+        logger.warning(f"OpenWA media download failed (non-fatal): {e}")
+        return None
 
 
 # ── OpenWA LID Resolver ────────────────────────────────────────
@@ -390,13 +470,31 @@ async def receive_openwa_webhook(request: Request):
         media_type = None
         contact_name = None
 
-        if has_media:
-            media_type = msg_type
-            # OpenWA may include media data directly
-            media_data = data.get('media') or data.get('_data', {})
-            if media_data.get('url'):
-                media_url = media_data['url']
-            body = data.get('caption', '') or f'[{msg_type.upper()}]'
+        # Media types from whatsapp-web.js: image, video, audio, ptt (voice note), document, sticker
+        MEDIA_TYPES = {'image', 'video', 'audio', 'ptt', 'document', 'sticker'}
+        is_media = has_media or msg_type in MEDIA_TYPES
+
+        if is_media:
+            media_type = msg_type if msg_type in MEDIA_TYPES else 'document'
+            # Normalize ptt → audio for display
+            if media_type == 'ptt':
+                media_type = 'audio'
+
+            # Get OpenWA credentials for media download
+            ow_creds = _get_openwa_creds_for_session(session_id)
+            if ow_creds:
+                media_url = await _download_openwa_media(
+                    ow_creds['server_url'], ow_creds['api_key'],
+                    ow_creds['session_id'], msg_id, media_type
+                )
+
+            # Get caption or set placeholder
+            caption = data.get('caption', '') or data.get('body', '')
+            if caption and caption != body:
+                body = caption
+            if not body:
+                type_labels = {'image': '[Imatge]', 'video': '[Vídeo]', 'audio': '[Àudio]', 'document': '[Document]', 'sticker': '[Sticker]'}
+                body = type_labels.get(media_type, f'[{media_type.upper()}]')
 
         # Deduplicate
         dedup_key = f"openwa_{msg_id}"

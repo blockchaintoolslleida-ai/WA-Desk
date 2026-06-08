@@ -167,10 +167,10 @@ function MediaContent({ msg, isOut }) {
 
   if (!url) return null;
 
-  if (type === 'image') {
+  if (type === 'image' || type === 'sticker') {
     return (
       <a href={url} target="_blank" rel="noopener noreferrer" className="block mb-1">
-        <img src={url} alt={msg.body || 'image'} className="max-w-full rounded-md max-h-[280px] object-cover cursor-pointer hover:opacity-90 transition-opacity" loading="lazy" />
+        <img src={url} alt={msg.body || type} className="max-w-full rounded-md max-h-[280px] object-cover cursor-pointer hover:opacity-90 transition-opacity" loading="lazy" />
       </a>
     );
   }
