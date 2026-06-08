@@ -193,7 +193,7 @@ export default function InboxPage() {
 
   return (
     <div className="h-screen flex flex-col bg-[#F8FAFC]">
-      <AppHeader currentPage="inbox" onNavigate={(p) => navigate(p === 'dashboard' ? '/dashboard' : p === 'agents' ? '/agents' : p === 'admin' ? '/admin' : '/')} />
+      <AppHeader currentPage="inbox" onNavigate={(p) => navigate(p === 'dashboard' ? '/dashboard' : p === 'contacts' ? '/contacts' : p === 'agents' ? '/agents' : p === 'admin' ? '/admin' : '/')} />
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left */}

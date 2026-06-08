@@ -83,7 +83,7 @@ export default function AgentsPage() {
 
   return (
     <div className="h-screen flex flex-col bg-[#F8FAFC]">
-      <AppHeader currentPage="agents" onNavigate={(page) => navigate(page === 'dashboard' ? '/dashboard' : page === 'agents' ? '/agents' : page === 'admin' ? '/admin' : '/')} />
+      <AppHeader currentPage="agents" onNavigate={(page) => navigate(page === 'dashboard' ? '/dashboard' : page === 'contacts' ? '/contacts' : page === 'agents' ? '/agents' : page === 'admin' ? '/admin' : '/')} />
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="flex items-center justify-between mb-6">
