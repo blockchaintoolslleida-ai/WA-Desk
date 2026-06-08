@@ -10,7 +10,7 @@ const translations = {
 
     // Contacts
     'contacts.title': 'Contactes',
-    'contacts.total': 'en total',
+    'contacts.total': 'Total de contactes:',
     'contacts.create': 'Nou contacte',
     'contacts.search_placeholder': 'Cercar per nom, telèfon o email...',
     'contacts.no_results': 'Cap contacte trobat',
@@ -22,6 +22,9 @@ const translations = {
     'contacts.col_actions': 'Accions',
     'contacts.source_manual': 'Manual',
     'contacts.source_google': 'Google',
+    'contacts.source_imported': 'Importat',
+    'contacts.source_gmail': 'Gmail',
+    'contacts.source_apple': 'Apple',
     'contacts.start_chat': 'Iniciar conversa',
     'contacts.edit': 'Editar',
     'contacts.delete': 'Eliminar',
@@ -557,7 +560,7 @@ const translations = {
 
     // Contacts
     'contacts.title': 'Contactos',
-    'contacts.total': 'en total',
+    'contacts.total': 'Total de contactos:',
     'contacts.create': 'Nuevo contacto',
     'contacts.search_placeholder': 'Buscar por nombre, teléfono o email...',
     'contacts.no_results': 'Ningún contacto encontrado',
@@ -569,6 +572,9 @@ const translations = {
     'contacts.col_actions': 'Acciones',
     'contacts.source_manual': 'Manual',
     'contacts.source_google': 'Google',
+    'contacts.source_imported': 'Importado',
+    'contacts.source_gmail': 'Gmail',
+    'contacts.source_apple': 'Apple',
     'contacts.start_chat': 'Iniciar conversación',
     'contacts.edit': 'Editar',
     'contacts.delete': 'Eliminar',
@@ -1091,7 +1097,7 @@ const translations = {
 
     // Contacts
     'contacts.title': 'Contacts',
-    'contacts.total': 'total',
+    'contacts.total': 'Total contacts:',
     'contacts.create': 'New contact',
     'contacts.search_placeholder': 'Search by name, phone or email...',
     'contacts.no_results': 'No contacts found',
@@ -1103,6 +1109,9 @@ const translations = {
     'contacts.col_actions': 'Actions',
     'contacts.source_manual': 'Manual',
     'contacts.source_google': 'Google',
+    'contacts.source_imported': 'Imported',
+    'contacts.source_gmail': 'Gmail',
+    'contacts.source_apple': 'Apple',
     'contacts.start_chat': 'Start conversation',
     'contacts.edit': 'Edit',
     'contacts.delete': 'Delete',
