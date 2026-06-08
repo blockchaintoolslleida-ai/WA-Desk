@@ -50,6 +50,10 @@ async def send_message(
     user = await get_user_from_token(authorization)
     supabase = get_supabase_admin()
 
+    # ── Role check ──────────────────────────────────────────
+    if user.get('role') == 'super_admin':
+        raise HTTPException(status_code=403, detail="El superadministrador no pot enviar missatges de WhatsApp")
+
     try:
         conv_res = supabase.table('conversations').select(
             '*, contacts(phone, name)'
@@ -62,6 +66,17 @@ async def send_message(
         phone = contact.get('phone')
         if not phone:
             raise HTTPException(status_code=400, detail="Contacte sense telefon")
+
+        # ── Agent check: must have a case assigned to them in this conversation ──
+        if user.get('role') == 'agent':
+            agent_cases = supabase.table('cases').select('id').eq(
+                'conversation_id', conversation_id
+            ).eq('assigned_agent_id', user['id']).eq('is_active', True).execute()
+            if not agent_cases.data:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Només pots respondre converses amb un cas assignat a tu"
+                )
 
         # If replying, auto-inherit case_id from the replied message
         actual_case_id = case_id

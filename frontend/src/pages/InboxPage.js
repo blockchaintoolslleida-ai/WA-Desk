@@ -11,7 +11,7 @@ import AppHeader from '../components/AppHeader';
 import CreateCaseModal from '../components/CreateCaseModal';
 
 export default function InboxPage() {
-  const { user } = useAuth();
+  const { user, canSendMessages, canDeleteConversations } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -204,13 +204,21 @@ export default function InboxPage() {
             onSelect={(id) => { setSelectedId(id); setSelectedCaseId(null); setMsgFilter('all'); setSelectionMode(false); setSelectedMsgIds([]); }}
             onFilterChange={setFilter}
             onSearchChange={setSearch}
-            onDelete={handleDeleteConversation}
+            onDelete={canDeleteConversations ? handleDeleteConversation : null}
           />
         </div>
 
         {/* Center */}
         <div className="flex-1 flex flex-col min-w-0">
           {selectedId && selectedConv ? (
+            !canSendMessages ? (
+              <div className="flex-1 flex items-center justify-center bg-[#F8FAFC]">
+                <div className="text-center p-8">
+                  <p className="text-sm font-semibold text-[#475569]">{t('chat.superadmin_no_chat') || 'El superadministrador no pot enviar missatges'}</p>
+                  <p className="text-xs text-[#94A3B8] mt-1">{t('chat.superadmin_no_chat_hint') || 'Utilitza un compte admin o agent per gestionar converses'}</p>
+                </div>
+              </div>
+            ) : (
             <ChatView
               conversation={selectedConv}
               messages={filteredMessages}
@@ -232,6 +240,7 @@ export default function InboxPage() {
               cases={selectedConv?.cases || []}
               onTemplateSent={() => Promise.all([loadConvDetail(selectedId), loadConversations()])}
             />
+            )
           ) : (
             <div className="flex-1 flex items-center justify-center text-[#64748B]">
               <div className="text-center">

@@ -48,8 +48,10 @@ async def get_user_from_token(authorization: str):
 
 @router.post("")
 async def create_contact(req: ContactCreate, authorization: Optional[str] = Header(None)):
-    """Create a new contact"""
+    """Create a new contact — admin and super_admin only"""
     user = await get_user_from_token(authorization)
+    if user.get('role') == 'agent':
+        raise HTTPException(status_code=403, detail="Els agents no poden crear contactes")
     supabase = get_supabase_admin()
     now = datetime.now(timezone.utc).isoformat()
 

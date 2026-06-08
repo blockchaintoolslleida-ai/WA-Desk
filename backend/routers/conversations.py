@@ -388,8 +388,10 @@ async def create_conversation(req: CreateConversationRequest, authorization: Opt
 
 @router.delete("/{conversation_id}")
 async def delete_conversation(conversation_id: str, authorization: Optional[str] = Header(None)):
-    """Hard-delete a conversation and all associated data (messages, cases, events, notes)"""
-    await get_user_from_token(authorization)
+    """Hard-delete a conversation — admin and super_admin only"""
+    user = await get_user_from_token(authorization)
+    if user.get('role') == 'agent':
+        raise HTTPException(status_code=403, detail="Els agents no poden eliminar converses")
     supabase = get_supabase_admin()
     try:
         # Delete all associated data in order (respecting FK constraints)

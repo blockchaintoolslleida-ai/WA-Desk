@@ -66,6 +66,9 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated: !!user,
     isAdmin: user?.role === 'admin' || user?.role === 'tenant_admin' || user?.role === 'super_admin',
     isSuperAdmin: user?.role === 'super_admin',
+    isAgent: user?.role === 'agent',
+    canSendMessages: user?.role !== 'super_admin',
+    canDeleteConversations: user?.role !== 'agent',
     profile: user,
   };
 
