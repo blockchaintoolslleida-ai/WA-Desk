@@ -16,7 +16,10 @@ export default function InboxPage() {
   const navigate = useNavigate();
 
   const [conversations, setConversations] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('conv') || null;
+  });
   const [selectedConv, setSelectedConv] = useState(null);
   const [messages, setMessages] = useState([]);
   const [agents, setAgents] = useState([]);

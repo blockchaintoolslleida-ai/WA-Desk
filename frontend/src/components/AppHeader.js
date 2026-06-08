@@ -1,6 +1,6 @@
 import { useTranslation } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { ChatCircleDots, ChartBar, Users, SignOut, Globe, GearSix } from '@phosphor-icons/react';
+import { ChatCircleDots, ChartBar, Users, SignOut, Globe, GearSix, AddressBook } from '@phosphor-icons/react';
 
 const LANGS = [
   { code: 'ca', label: 'CA' },
@@ -25,6 +25,9 @@ export default function AppHeader({ currentPage, onNavigate }) {
           </button>
           <button data-testid="nav-dashboard" onClick={() => onNavigate('dashboard')} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${currentPage === 'dashboard' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}>
             <ChartBar size={14} /> {t('nav.dashboard')}
+          </button>
+          <button data-testid="nav-contacts" onClick={() => onNavigate('contacts')} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${currentPage === 'contacts' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}>
+            <AddressBook size={14} /> {t('nav.contacts') || 'Contactes'}
           </button>
           {isAdmin && (
             <button data-testid="nav-agents" onClick={() => onNavigate('agents')} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${currentPage === 'agents' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}>

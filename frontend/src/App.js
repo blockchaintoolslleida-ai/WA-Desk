@@ -8,6 +8,7 @@ import InboxPage from "./pages/InboxPage";
 import DashboardPage from "./pages/DashboardPage";
 import AgentsPage from "./pages/AgentsPage";
 import AdminPage from "./pages/AdminPage";
+import ContactsPage from "./pages/ContactsPage";
 import SetupPage from "./pages/SetupPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 
@@ -48,6 +49,7 @@ function App() {
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+          <Route path="/contacts" element={<ProtectedRoute><ContactsPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <Toaster position="top-right" richColors />

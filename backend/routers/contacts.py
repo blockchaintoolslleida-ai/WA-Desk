@@ -1,7 +1,7 @@
 """
-Contacts Router - CRUD contact info
+Contacts Router — Full CRUD + search + start conversation
 """
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Query
 from typing import Optional
 from pydantic import BaseModel
 import logging
@@ -44,6 +44,106 @@ async def get_user_from_token(authorization: str):
         raise
     except Exception:
         raise HTTPException(status_code=401, detail="Error d'autenticacio")
+
+
+# ── LIST ──────────────────────────────────────────────────────
+
+@router.get("")
+async def list_contacts(
+    authorization: Optional[str] = Header(None),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List contacts with optional search, paginated"""
+    user = await get_user_from_token(authorization)
+    supabase = get_supabase_admin()
+    tenant_id = user.get('tenant_id')
+
+    try:
+        query = supabase.table('contacts').select('*', count='exact')
+
+        # Tenant filter
+        if tenant_id and user.get('role') != 'super_admin':
+            query = query.eq('tenant_id', tenant_id)
+
+        # Search
+        if search:
+            q = search.strip()
+            # SQLite doesn't support OR in Supabase client, so we filter in Python
+            query = query.order('name')
+
+        result = query.order('name').execute()
+        contacts = result.data or []
+
+        # Apply search filter in Python (name, phone, email)
+        if search:
+            q = search.strip().lower()
+            contacts = [c for c in contacts if
+                        q in (c.get('name') or '').lower() or
+                        q in (c.get('phone') or '').lower() or
+                        q in (c.get('email') or '').lower()]
+
+        total = len(contacts)
+        # Paginate manually
+        start = (page - 1) * limit
+        end = start + limit
+
+        return {
+            "contacts": contacts[start:end],
+            "total": total,
+            "page": page,
+            "pages": max(1, (total + limit - 1) // limit),
+        }
+
+    except Exception as e:
+        logger.error(f"List contacts error: {e}")
+        raise HTTPException(status_code=500, detail="Error carregant contactes")
+
+
+# ── SEARCH ────────────────────────────────────────────────────
+
+@router.get("/search")
+async def search_contacts(
+    q: str = Query(..., min_length=1),
+    authorization: Optional[str] = Header(None),
+):
+    """Quick search contacts — returns top 20 matches"""
+    user = await get_user_from_token(authorization)
+    supabase = get_supabase_admin()
+    tenant_id = user.get('tenant_id')
+
+    try:
+        query = supabase.table('contacts').select('id, name, phone, email, source')
+        if tenant_id and user.get('role') != 'super_admin':
+            query = query.eq('tenant_id', tenant_id)
+        query = query.order('name').limit(100).execute()
+        contacts = query.data or []
+
+        ql = q.strip().lower()
+        matches = [c for c in contacts if
+                   ql in (c.get('name') or '').lower() or
+                   ql in (c.get('phone') or '').lower() or
+                   ql in (c.get('email') or '').lower()]
+        return matches[:20]
+
+    except Exception as e:
+        logger.error(f"Search contacts error: {e}")
+        raise HTTPException(status_code=500, detail="Error cercant contactes")
+
+
+# ── GET SINGLE ────────────────────────────────────────────────
+
+@router.get("/{contact_id}")
+async def get_contact(contact_id: str, authorization: Optional[str] = Header(None)):
+    """Get a single contact by ID"""
+    await get_user_from_token(authorization)
+    supabase = get_supabase_admin()
+
+    result = supabase.table('contacts').select('*').eq('id', contact_id).single().execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Contacte no trobat")
+    return result.data
 
 
 @router.post("")
@@ -106,3 +206,87 @@ async def update_contact(contact_id: str, req: ContactUpdate, authorization: Opt
     except Exception as e:
         logger.error(f"Update contact error: {e}")
         raise HTTPException(status_code=500, detail="Error actualitzant contacte")
+
+
+# ── DELETE ────────────────────────────────────────────────────
+
+@router.delete("/{contact_id}")
+async def delete_contact(contact_id: str, authorization: Optional[str] = Header(None)):
+    """Hard delete a contact — admin and super_admin only"""
+    user = await get_user_from_token(authorization)
+    if user.get('role') == 'agent':
+        raise HTTPException(status_code=403, detail="Els agents no poden eliminar contactes")
+    supabase = get_supabase_admin()
+
+    try:
+        existing = supabase.table('contacts').select('id,name').eq('id', contact_id).single().execute()
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Contacte no trobat")
+
+        # Delete associated conversations first (FK constraint)
+        convs = supabase.table('conversations').select('id').eq('contact_id', contact_id).execute()
+        for c in (convs.data or []):
+            # Delete messages and cases for each conversation
+            cases_res = supabase.table('cases').select('id').eq('conversation_id', c['id']).execute()
+            for cs in (cases_res.data or []):
+                supabase.table('case_events').delete().eq('case_id', cs['id']).execute()
+                supabase.table('case_notes').delete().eq('case_id', cs['id']).execute()
+                supabase.table('case_views').delete().eq('case_id', cs['id']).execute()
+            supabase.table('cases').delete().eq('conversation_id', c['id']).execute()
+            supabase.table('messages').delete().eq('conversation_id', c['id']).execute()
+        supabase.table('conversations').delete().eq('contact_id', contact_id).execute()
+        supabase.table('contacts').delete().eq('id', contact_id).execute()
+
+        return {"ok": True, "deleted": existing.data.get('name', contact_id)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete contact error: {e}")
+        raise HTTPException(status_code=500, detail="Error eliminant contacte")
+
+
+# ── START CONVERSATION ────────────────────────────────────────
+
+@router.post("/{contact_id}/start-conversation")
+async def start_conversation(contact_id: str, authorization: Optional[str] = Header(None)):
+    """Create a new conversation for a contact and return the conversation ID"""
+    user = await get_user_from_token(authorization)
+    supabase = get_supabase_admin()
+    now = datetime.now(timezone.utc).isoformat()
+
+    try:
+        contact = supabase.table('contacts').select('id,name,phone').eq('id', contact_id).single().execute()
+        if not contact.data:
+            raise HTTPException(status_code=404, detail="Contacte no trobat")
+
+        # Check if active conversation already exists
+        existing = supabase.table('conversations').select('id').eq(
+            'contact_id', contact_id
+        ).eq('is_active', True).order('created_at', desc=True).limit(1).execute()
+
+        if existing.data:
+            return {"conversation_id": existing.data[0]['id'], "reused": True}
+
+        # Create new conversation
+        conv_id = str(uuid.uuid4())
+        conv_data = {
+            'id': conv_id,
+            'contact_id': contact_id,
+            'status': None,
+            'last_message_at': now,
+            'unread_count': 0,
+            'is_active': True,
+            'tenant_id': user.get('tenant_id'),
+            'created_at': now,
+            'updated_at': now,
+        }
+        supabase.table('conversations').insert(conv_data).execute()
+
+        return {"conversation_id": conv_id, "reused": False}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Start conversation error: {e}")
+        raise HTTPException(status_code=500, detail="Error iniciant conversa")

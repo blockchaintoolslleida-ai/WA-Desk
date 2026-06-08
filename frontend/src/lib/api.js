@@ -86,8 +86,13 @@ export const setupApi = {
 };
 
 export const contactsApi = {
+  list: (params = {}) => api.get('/contacts', { params }),
+  get: (id) => api.get(`/contacts/${id}`),
+  search: (q) => api.get('/contacts/search', { params: { q } }),
   create: (data) => api.post(`/contacts`, data),
   update: (contactId, data) => api.put(`/contacts/${contactId}`, data),
+  delete: (id) => api.delete(`/contacts/${id}`),
+  startConversation: (id) => api.post(`/contacts/${id}/start-conversation`),
 };
 
 export const windowApi = {
