@@ -112,7 +112,11 @@ export const adminApi = {
   getAuditLogs: (limit = 50) => api.get(`/admin/audit-logs?limit=${limit}`),
   // Super admin: company management
   getTenants: () => api.get('/admin/tenants'),
+  updateTenant: (id, data) => api.put(`/admin/tenants/${id}`, data),
   deleteTenant: (id) => api.delete(`/admin/tenants/${id}`),
+  getTenantUsers: (id) => api.get(`/admin/tenants/${id}/users`),
+  assignTenantUser: (id, data) => api.post(`/admin/tenants/${id}/users`, data),
+  removeTenantUser: (tenantId, userId) => api.delete(`/admin/tenants/${tenantId}/users/${userId}`),
   deleteUser: (id) => api.delete(`/admin/users/${id}`),
 };
 

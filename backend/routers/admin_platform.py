@@ -659,6 +659,134 @@ async def delete_tenant(tenant_id: str, authorization: Optional[str] = Header(No
     return {"ok": True, "deleted": tenant_name}
 
 
+class TenantUpdate(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+
+
+@router.put("/tenants/{tenant_id}")
+async def update_tenant(tenant_id: str, req: TenantUpdate, authorization: Optional[str] = Header(None)):
+    """Edit company name/slug — super_admin only"""
+    user = await get_admin_user(authorization)
+    require_super_admin(user)
+    supabase = get_supabase_admin()
+
+    tenant = supabase.table('tenants').select('id').eq('id', tenant_id).single().execute()
+    if not tenant.data:
+        raise HTTPException(status_code=404, detail="Empresa no trobada")
+
+    updates = {}
+    if req.name is not None:
+        updates['name'] = req.name.strip()
+    if req.slug is not None:
+        slug = req.slug.strip().lower().replace(' ', '-')
+        existing = supabase.table('tenants').select('id').eq('slug', slug).neq('id', tenant_id).limit(1).execute()
+        if existing.data:
+            raise HTTPException(status_code=409, detail="Aquest slug ja existeix")
+        updates['slug'] = slug
+
+    if updates:
+        supabase.table('tenants').update(updates).eq('id', tenant_id).execute()
+        await log_audit(tenant_id, user['id'], 'update_tenant', 'tenant', tenant_id,
+                        f"Updated: {', '.join(updates.keys())}")
+    updated = supabase.table('tenants').select('*').eq('id', tenant_id).single().execute()
+    return updated.data
+
+
+@router.get("/tenants/{tenant_id}/users")
+async def list_tenant_users(tenant_id: str, authorization: Optional[str] = Header(None)):
+    """List users in a company — super_admin only"""
+    user = await get_admin_user(authorization)
+    require_super_admin(user)
+    supabase = get_supabase_admin()
+
+    users = supabase.table('profiles').select(
+        'id, full_name, email, role, phone, is_active, created_at'
+    ).eq('tenant_id', tenant_id).order('created_at').execute()
+    return users.data or []
+
+
+class AssignUserRequest(BaseModel):
+    email: str
+    full_name: str
+    password: str
+    role: str = 'agent'  # 'admin' or 'agent'
+
+
+@router.post("/tenants/{tenant_id}/users")
+async def assign_user_to_tenant(tenant_id: str, req: AssignUserRequest, authorization: Optional[str] = Header(None)):
+    """Create and assign a new admin/agent to a company — super_admin only"""
+    user = await get_admin_user(authorization)
+    require_super_admin(user)
+    supabase = get_supabase_admin()
+
+    # Verify tenant
+    tenant = supabase.table('tenants').select('id').eq('id', tenant_id).single().execute()
+    if not tenant.data:
+        raise HTTPException(status_code=404, detail="Empresa no trobada")
+
+    if req.role not in ('admin', 'agent'):
+        raise HTTPException(status_code=400, detail="Rol ha de ser 'admin' o 'agent'")
+
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        # Create auth user
+        auth_response = supabase.auth.admin.create_user({
+            "email": req.email.strip(),
+            "password": req.password,
+            "email_confirm": True,
+        })
+        uid = auth_response.user.id
+    except Exception as e:
+        if 'already been registered' in str(e) or 'duplicate' in str(e).lower():
+            raise HTTPException(status_code=400, detail="Ja existeix un usuari amb aquest email")
+        raise HTTPException(status_code=500, detail=f"Error creant usuari: {str(e)[:100]}")
+
+    profile = {
+        'id': uid,
+        'full_name': req.full_name.strip(),
+        'email': req.email.strip(),
+        'role': req.role,
+        'is_active': True,
+        'tenant_id': tenant_id,
+        'created_at': now,
+    }
+    supabase.table('profiles').insert(profile).execute()
+
+    await log_audit(tenant_id, user['id'], 'assign_user', 'profiles', uid,
+                    f"User '{req.full_name}' ({req.role}) assigned to tenant")
+    return profile
+
+
+@router.delete("/tenants/{tenant_id}/users/{target_user_id}")
+async def remove_user_from_tenant(tenant_id: str, target_user_id: str, authorization: Optional[str] = Header(None)):
+    """Remove user from company (unlink or delete agent) — super_admin only"""
+    user = await get_admin_user(authorization)
+    require_super_admin(user)
+    supabase = get_supabase_admin()
+
+    target = supabase.table('profiles').select('id,full_name,role,email,tenant_id').eq('id', target_user_id).single().execute()
+    if not target.data:
+        raise HTTPException(status_code=404, detail="Usuari no trobat")
+    if target.data.get('tenant_id') != tenant_id:
+        raise HTTPException(status_code=400, detail="Aquest usuari no pertany a aquesta empresa")
+
+    target_name = target.data.get('full_name', target.data.get('email', ''))
+
+    if target.data['role'] == 'agent':
+        # Delete agent completely
+        supabase.table('profiles').delete().eq('id', target_user_id).execute()
+        await log_audit(tenant_id, user['id'], 'remove_user', 'profiles', target_user_id,
+                        f"Agent '{target_name}' deleted")
+        return {"ok": True, "deleted": True, "name": target_name}
+    else:
+        # Unlink admin (set tenant_id to None, don't delete)
+        supabase.table('profiles').update({'tenant_id': None}).eq('id', target_user_id).execute()
+        await log_audit(tenant_id, user['id'], 'unlink_user', 'profiles', target_user_id,
+                        f"Admin '{target_name}' unlinked from tenant")
+        return {"ok": True, "unlinked": True, "name": target_name}
+
+
 @router.delete("/users/{user_id}")
 async def delete_user(user_id: str, authorization: Optional[str] = Header(None)):
     """Delete any user — super_admin only"""
