@@ -242,31 +242,66 @@ async def validate_connection(authorization: Optional[str] = Header(None)):
         supabase.table('whatsapp_accounts').update(status_update).eq('id', acc['id']).execute()
 
         # Auto-register webhook on OpenWA after successful validation
+        # First check if our webhook already exists to avoid duplicates
         webhook_registered = False
         if result['ok']:
             try:
                 base_url = os.environ.get('BASE_URL', 'http://localhost:8000')
-                # Use the frontend-accessible URL if available via Referer or known IP
                 webhook_url = f"{base_url}/api/whatsapp/webhook/openwa"
-                webhook_payload = {
-                    "url": webhook_url,
-                    "events": ["message.received"],
-                }
+
                 async with httpx.AsyncClient(timeout=10) as openwa_client:
-                    wh_resp = await openwa_client.post(
+                    # Check existing webhooks
+                    existing_wh = await openwa_client.get(
                         f"{server_url.rstrip('/')}/api/sessions/{session_id}/webhooks",
-                        headers={"X-API-Key": api_key, "Content-Type": "application/json"},
-                        json=webhook_payload,
+                        headers={"X-API-Key": api_key},
                     )
-                if wh_resp.status_code in (200, 201):
-                    webhook_registered = True
-                    logger.info(f"OpenWA webhook auto-registered: {webhook_url}")
-                    supabase.table('whatsapp_accounts').update({
-                        'webhook_status': 'verified',
-                        'updated_at': datetime.now(timezone.utc).isoformat(),
-                    }).eq('id', acc['id']).execute()
-                else:
-                    logger.warning(f"OpenWA webhook registration returned {wh_resp.status_code}: {wh_resp.text[:200]}")
+
+                    already_exists = False
+                    if existing_wh.status_code == 200:
+                        wh_list = existing_wh.json()
+                        if isinstance(wh_list, list):
+                            matches = [wh for wh in wh_list if wh.get('url') == webhook_url]
+                            if matches:
+                                already_exists = True
+                                webhook_registered = True
+                                logger.info(f"OpenWA webhook already exists: {webhook_url} (found {len(matches)})")
+                                supabase.table('whatsapp_accounts').update({
+                                    'webhook_status': 'verified',
+                                    'updated_at': datetime.now(timezone.utc).isoformat(),
+                                }).eq('id', acc['id']).execute()
+                                # Delete duplicate extra webhooks, keep only the first one
+                                for dup in matches[1:]:
+                                    dup_id = dup.get('id')
+                                    if dup_id:
+                                        try:
+                                            await openwa_client.delete(
+                                                f"{server_url.rstrip('/')}/api/sessions/{session_id}/webhooks/{dup_id}",
+                                                headers={"X-API-Key": api_key},
+                                            )
+                                            logger.info(f"Deleted duplicate webhook: {dup_id}")
+                                        except Exception as del_err:
+                                            logger.warning(f"Failed to delete duplicate webhook {dup_id}: {del_err}")
+
+                    # Create only if not found
+                    if not already_exists:
+                        webhook_payload = {
+                            "url": webhook_url,
+                            "events": ["message.received"],
+                        }
+                        wh_resp = await openwa_client.post(
+                            f"{server_url.rstrip('/')}/api/sessions/{session_id}/webhooks",
+                            headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+                            json=webhook_payload,
+                        )
+                        if wh_resp.status_code in (200, 201):
+                            webhook_registered = True
+                            logger.info(f"OpenWA webhook registered: {webhook_url}")
+                            supabase.table('whatsapp_accounts').update({
+                                'webhook_status': 'verified',
+                                'updated_at': datetime.now(timezone.utc).isoformat(),
+                            }).eq('id', acc['id']).execute()
+                        else:
+                            logger.warning(f"OpenWA webhook registration returned {wh_resp.status_code}: {wh_resp.text[:200]}")
             except Exception as wh_err:
                 logger.warning(f"OpenWA webhook registration failed (non-fatal): {wh_err}")
 
