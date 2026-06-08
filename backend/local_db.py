@@ -751,6 +751,9 @@ CREATE TABLE IF NOT EXISTS whatsapp_accounts (
     business_manager_id TEXT DEFAULT '',
     meta_app_id TEXT DEFAULT '',
     sender_display_name TEXT DEFAULT '',
+    connection_type TEXT DEFAULT 'meta',
+    openwa_server_url TEXT DEFAULT '',
+    openwa_session_id TEXT DEFAULT '',
     connection_status TEXT DEFAULT 'disconnected',
     webhook_status TEXT DEFAULT 'not_configured',
     token_status TEXT DEFAULT 'not_set',
@@ -765,6 +768,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_secrets (
     encrypted_access_token TEXT,
     encrypted_app_secret TEXT,
     encrypted_verify_token TEXT,
+    encrypted_openwa_api_key TEXT,
     token_expires_at TEXT,
     last_rotated_at TEXT,
     created_at TEXT NOT NULL,
@@ -908,6 +912,21 @@ def _seed_test_users(conn):
     conn.commit()
 
 
+def _migrate_schema(conn):
+    """Add columns that may be missing on existing databases (safe to call multiple times)."""
+    migrations = [
+        "ALTER TABLE whatsapp_accounts ADD COLUMN connection_type TEXT DEFAULT 'meta'",
+        "ALTER TABLE whatsapp_accounts ADD COLUMN openwa_server_url TEXT DEFAULT ''",
+        "ALTER TABLE whatsapp_accounts ADD COLUMN openwa_session_id TEXT DEFAULT ''",
+        "ALTER TABLE whatsapp_secrets ADD COLUMN encrypted_openwa_api_key TEXT",
+    ]
+    for sql in migrations:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+
 def init_db(db_path: str = None):
     """Create schema and seed data on first run. Safe to call multiple times."""
     path = db_path or str(DB_PATH)
@@ -917,6 +936,7 @@ def init_db(db_path: str = None):
     conn.execute("PRAGMA foreign_keys=ON")
 
     conn.executescript(SCHEMA_SQL)
+    _migrate_schema(conn)  # Add any columns from newer versions
     conn.commit()
 
     # Check if already seeded

@@ -1,15 +1,23 @@
 """
-Contacts Router - Update contact info
+Contacts Router - CRUD contact info
 """
 from fastapi import APIRouter, HTTPException, Header
 from typing import Optional
 from pydantic import BaseModel
 import logging
+import uuid
 from datetime import datetime, timezone
 from database import get_supabase_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/contacts", tags=["Contacts"])
+
+
+class ContactCreate(BaseModel):
+    name: str
+    phone: str
+    email: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class ContactUpdate(BaseModel):
@@ -36,6 +44,31 @@ async def get_user_from_token(authorization: str):
         raise
     except Exception:
         raise HTTPException(status_code=401, detail="Error d'autenticacio")
+
+
+@router.post("")
+async def create_contact(req: ContactCreate, authorization: Optional[str] = Header(None)):
+    """Create a new contact"""
+    user = await get_user_from_token(authorization)
+    supabase = get_supabase_admin()
+    now = datetime.now(timezone.utc).isoformat()
+
+    try:
+        contact = {
+            'id': str(uuid.uuid4()),
+            'name': req.name.strip(),
+            'phone': req.phone.strip(),
+            'email': req.email.strip() if req.email else None,
+            'notes': req.notes.strip() if req.notes else None,
+            'tenant_id': user.get('tenant_id'),
+            'created_at': now,
+            'updated_at': now,
+        }
+        supabase.table('contacts').insert(contact).execute()
+        return contact
+    except Exception as e:
+        logger.error(f"Create contact error: {e}")
+        raise HTTPException(status_code=500, detail="Error creant contacte")
 
 
 @router.put("/{contact_id}")

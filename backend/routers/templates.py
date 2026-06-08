@@ -36,8 +36,18 @@ async def get_admin_user(authorization: str):
 
 
 def _get_tenant_meta_creds(tenant_id: str):
-    """Returns (token, phone_number_id, waba_id) for tenant; raises 400 if no WABA."""
-    token, phone_id, waba_id = get_tenant_credentials(tenant_id)
+    """Returns (token, phone_number_id, waba_id) for tenant; raises 400 if not Meta."""
+    from services.tenant_credentials import get_tenant_connection_config
+    config = get_tenant_connection_config(tenant_id)
+    if config.get('connection_type') == 'openwa':
+        raise HTTPException(
+            status_code=400,
+            detail="Les plantilles només estan disponibles amb WhatsApp Business API (Meta). "
+                   "OpenWA no requereix plantilles per enviar missatges fora de la finestra 24h."
+        )
+    token = config.get('access_token')
+    phone_id = config.get('phone_number_id')
+    waba_id = config.get('whatsapp_business_account_id')
     if not waba_id:
         raise HTTPException(status_code=400, detail="No s'ha pogut obtenir el WABA ID. Configura'l al Setup Wizard.")
     if not token:

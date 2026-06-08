@@ -75,6 +75,18 @@ export default function InboxPage() {
     }
   }, []);
 
+  const handleDeleteConversation = async (convId) => {
+    try {
+      await conversationsApi.delete(convId);
+      if (selectedId === convId) {
+        setSelectedId(null);
+        setSelectedConv(null);
+        setMessages([]);
+      }
+      loadConversations();
+    } catch (err) { console.error('Delete failed:', err); }
+  };
+
   useEffect(() => {
     agentsApi.list().then(res => setAgents(res.data || [])).catch(() => {});
   }, []);
@@ -192,6 +204,7 @@ export default function InboxPage() {
             onSelect={(id) => { setSelectedId(id); setSelectedCaseId(null); setMsgFilter('all'); setSelectionMode(false); setSelectedMsgIds([]); }}
             onFilterChange={setFilter}
             onSearchChange={setSearch}
+            onDelete={handleDeleteConversation}
           />
         </div>
 

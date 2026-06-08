@@ -29,6 +29,8 @@ export const conversationsApi = {
   get: (id) => api.get(`/conversations/${id}`),
   messages: (id, params = {}) => api.get(`/conversations/${id}/messages`, { params }),
   markRead: (id) => api.post(`/conversations/${id}/read`),
+  create: (data) => api.post(`/conversations`, data),
+  delete: (id) => api.delete(`/conversations/${id}`),
 };
 
 export const messagesApi = {
@@ -84,6 +86,7 @@ export const setupApi = {
 };
 
 export const contactsApi = {
+  create: (data) => api.post(`/contacts`, data),
   update: (contactId, data) => api.put(`/contacts/${contactId}`, data),
 };
 

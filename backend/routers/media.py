@@ -98,7 +98,32 @@ async def send_media(
         # Send via WhatsApp (tenant-scoped credentials)
         tenant_id = user.get('tenant_id')
         wa_sent = False
-        if msg_type == 'image':
+
+        # Check connection type for media routing
+        from services.tenant_credentials import get_tenant_connection_config
+        conn_config = get_tenant_connection_config(tenant_id)
+
+        if conn_config.get('connection_type') == 'openwa':
+            # OpenWA: send media directly (single request, no separate upload)
+            from services.whatsapp import send_openwa_media
+            ow_phone = phone
+            if ow_phone.startswith('lid_'):
+                ow_chat_id = ow_phone[4:] + '@lid'
+            else:
+                ow_chat_id = normalize_phone(ow_phone) + '@c.us'
+            result = await send_openwa_media(
+                server_url=conn_config['openwa_server_url'],
+                api_key=conn_config['openwa_api_key'],
+                session_id=conn_config['openwa_session_id'],
+                chat_id=ow_chat_id,
+                media_type=msg_type,
+                file_bytes=file_bytes,
+                filename=filename,
+                mime_type=mime_type,
+                caption=caption,
+            )
+            wa_sent = result.get('ok', False)
+        elif msg_type == 'image':
             wa_media_id = await upload_media_to_whatsapp(file_bytes, mime_type, filename, tenant_id=tenant_id)
             if wa_media_id:
                 wa_sent = await send_whatsapp_image(phone, wa_media_id, caption, tenant_id=tenant_id)

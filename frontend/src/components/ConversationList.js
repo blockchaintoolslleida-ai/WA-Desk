@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useTranslation } from '../contexts/LanguageContext';
-import { MagnifyingGlass } from '@phosphor-icons/react';
+import { MagnifyingGlass, X, Plus, UserPlus } from '@phosphor-icons/react';
+import { contactsApi, conversationsApi } from '../lib/api';
 
 function formatTime(dateStr, locale) {
   if (!dateStr) return '';
@@ -15,8 +17,26 @@ function formatTime(dateStr, locale) {
   return d.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
 }
 
-export default function ConversationList({ conversations, selectedId, filter, search, loading, onSelect, onFilterChange, onSearchChange }) {
+export default function ConversationList({ conversations, selectedId, filter, search, loading, onSelect, onFilterChange, onSearchChange, onDelete }) {
   const { t, locale } = useTranslation();
+  const [showNewContact, setShowNewContact] = useState(false);
+  const [newContact, setNewContact] = useState({ name: '', phone: '' });
+  const [creating, setCreating] = useState(false);
+
+  const handleCreateContact = async () => {
+    if (!newContact.name.trim() || !newContact.phone.trim()) return;
+    setCreating(true);
+    try {
+      const res = await contactsApi.create(newContact);
+      // Create a conversation for this contact
+      const convRes = await conversationsApi.create({ contact_id: res.data.id });
+      setShowNewContact(false);
+      setNewContact({ name: '', phone: '' });
+      // Reload conversations
+      window.location.reload();
+    } catch (e) { console.error('Create contact failed:', e); }
+    setCreating(false);
+  };
 
   const FILTERS = [
     { key: 'all', label: t('filter.all') },
@@ -35,6 +55,31 @@ export default function ConversationList({ conversations, selectedId, filter, se
           <MagnifyingGlass size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#64748B]" />
           <input data-testid="conversation-search" type="text" value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder={t('conv.search_placeholder')} className="w-full pl-8 pr-3 py-1.5 text-sm border border-[#E2E8F0] rounded-md focus:outline-none focus:ring-2 focus:ring-[#0F172A] focus:border-transparent" />
         </div>
+        <button onClick={() => setShowNewContact(!showNewContact)}
+          className="mt-2 w-full flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-medium text-[#0F172A] border border-dashed border-[#CBD5E1] rounded-md hover:bg-[#F1F5F9] transition-colors">
+          <UserPlus size={14} weight="bold" />
+          {t('conv.new_contact') || 'New Contact'}
+        </button>
+        {showNewContact && (
+          <div className="mt-2 p-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-md space-y-2">
+            <input type="text" placeholder={t('conv.contact_name') || 'Name'} value={newContact.name}
+              onChange={e => setNewContact(p => ({...p, name: e.target.value}))}
+              className="w-full px-2 py-1.5 text-xs border border-[#E2E8F0] rounded focus:outline-none focus:ring-1 focus:ring-[#0F172A]" />
+            <input type="text" placeholder={t('conv.contact_phone') || 'Phone (with country code)'} value={newContact.phone}
+              onChange={e => setNewContact(p => ({...p, phone: e.target.value}))}
+              className="w-full px-2 py-1.5 text-xs border border-[#E2E8F0] rounded focus:outline-none focus:ring-1 focus:ring-[#0F172A]" />
+            <div className="flex gap-1">
+              <button onClick={handleCreateContact} disabled={creating}
+                className="flex-1 px-2 py-1.5 text-xs font-medium bg-[#0F172A] text-white rounded hover:bg-[#1E293B] disabled:opacity-50">
+                {creating ? '...' : t('conv.create') || 'Create'}
+              </button>
+              <button onClick={() => setShowNewContact(false)}
+                className="px-2 py-1.5 text-xs text-[#64748B] border border-[#E2E8F0] rounded hover:bg-white">
+                {t('conv.cancel') || 'Cancel'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <div className="px-3 py-2 border-b border-[#E2E8F0] flex flex-wrap gap-1">
         {FILTERS.map((f) => (
@@ -56,7 +101,8 @@ export default function ConversationList({ conversations, selectedId, filter, se
             const hasPending = conv.pending_cases > 0 || conv.unclassified_count > 0;
 
             return (
-              <button key={conv.id} data-testid={`conversation-item-${conv.id}`} onClick={() => onSelect(conv.id)} className={`w-full text-left px-3 py-3 border-b border-[#E2E8F0] transition-colors ${isSelected ? 'bg-[#F1F5F9]' : 'hover:bg-[#FAFBFC]'} ${hasUnread ? 'bg-blue-50/30' : ''}`}>
+              <div key={conv.id} data-testid={`conversation-item-${conv.id}`} className={`flex items-stretch border-b border-[#E2E8F0] transition-colors ${isSelected ? 'bg-[#F1F5F9]' : 'hover:bg-[#FAFBFC]'} ${hasUnread ? 'bg-blue-50/30' : ''}`}>
+              <button onClick={() => onSelect(conv.id)} className="w-full text-left px-3 py-3 flex-1">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
@@ -111,6 +157,14 @@ export default function ConversationList({ conversations, selectedId, filter, se
                   )}
                 </div>
               </button>
+              {onDelete && (
+                <button onClick={(e) => { e.stopPropagation(); onDelete(conv.id); }}
+                  className="px-2 flex items-center justify-center hover:bg-red-50 text-[#94A3B8] hover:text-red-500 transition-colors flex-shrink-0"
+                  title={t('conv.delete') || 'Delete'}>
+                  <X size={14} weight="bold" />
+                </button>
+              )}
+            </div>
             );
           })
         )}

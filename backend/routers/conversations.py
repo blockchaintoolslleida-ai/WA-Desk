@@ -4,7 +4,9 @@ Optimized: batch queries instead of N+1
 """
 from fastapi import APIRouter, HTTPException, Header, Query
 from typing import Optional
+from pydantic import BaseModel
 import logging
+import uuid
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
@@ -341,3 +343,69 @@ async def mark_read(conversation_id: str, authorization: Optional[str] = Header(
         return {"ok": True}
     except Exception:
         return {"ok": False}
+
+
+class CreateConversationRequest(BaseModel):
+    contact_id: str
+
+
+@router.post("")
+async def create_conversation(req: CreateConversationRequest, authorization: Optional[str] = Header(None)):
+    """Create a new conversation for a contact"""
+    user = await get_user_from_token(authorization)
+    supabase = get_supabase_admin()
+    now = datetime.now(timezone.utc).isoformat()
+
+    try:
+        # Verify contact exists
+        contact = supabase.table('contacts').select('id,name,phone').eq('id', req.contact_id).single().execute()
+        if not contact.data:
+            raise HTTPException(status_code=404, detail="Contacte no trobat")
+
+        conv_id = str(uuid.uuid4())
+        conv_data = {
+            'id': conv_id,
+            'contact_id': req.contact_id,
+            'status': None,
+            'last_message_at': now,
+            'unread_count': 0,
+            'is_active': True,
+            'tenant_id': user.get('tenant_id'),
+            'created_at': now,
+            'updated_at': now,
+        }
+        supabase.table('conversations').insert(conv_data).execute()
+
+        # Return conversation with contact info
+        result = supabase.table('conversations').select('*, contacts(id, name, phone)').eq('id', conv_id).single().execute()
+        return result.data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Create conversation error: {e}")
+        raise HTTPException(status_code=500, detail="Error creant conversa")
+
+
+@router.delete("/{conversation_id}")
+async def delete_conversation(conversation_id: str, authorization: Optional[str] = Header(None)):
+    """Hard-delete a conversation and all associated data (messages, cases, events, notes)"""
+    await get_user_from_token(authorization)
+    supabase = get_supabase_admin()
+    try:
+        # Delete all associated data in order (respecting FK constraints)
+        # Find cases linked to this conversation
+        cases = supabase.table('cases').select('id').eq('conversation_id', conversation_id).execute()
+        case_ids = [c['id'] for c in (cases.data or [])]
+
+        for cid in case_ids:
+            supabase.table('case_events').delete().eq('case_id', cid).execute()
+            supabase.table('case_notes').delete().eq('case_id', cid).execute()
+            supabase.table('case_views').delete().eq('case_id', cid).execute()
+        supabase.table('cases').delete().eq('conversation_id', conversation_id).execute()
+        supabase.table('messages').delete().eq('conversation_id', conversation_id).execute()
+        supabase.table('conversations').delete().eq('id', conversation_id).execute()
+
+        return {"ok": True, "deleted": True, "hard": True}
+    except Exception as e:
+        logger.error(f"Delete conversation error: {e}")
+        raise HTTPException(status_code=500, detail="Error eliminant conversa")

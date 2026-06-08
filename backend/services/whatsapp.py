@@ -111,17 +111,39 @@ def parse_webhook_payload(payload: Dict[str, Any]) -> Optional[WhatsAppInboundMe
 
 
 async def send_whatsapp_message(message: WhatsAppOutboundMessage, reply_to_wamid: str = None, phone_number_id: str = None, tenant_id: str = None) -> dict:
-    """Send a WhatsApp message via the Cloud API, optionally as a reply (quoted).
+    """Send a WhatsApp message via the Cloud API (Meta) or OpenWA Gateway.
 
     Credentials resolution:
-      - If tenant_id is provided → use tenant's stored token + phone_number_id (fallback to .env)
-      - phone_number_id parameter overrides everything when provided
+      - If tenant_id is provided → use tenant's stored config (Meta or OpenWA)
+      - phone_number_id parameter overrides Meta phone_id when provided
+      - Auto-detects connection_type and routes accordingly
 
     Returns: {"ok": bool, "error": str or None, "wamid": str or None}
     """
-    # Resolve credentials per-tenant
-    from services.tenant_credentials import get_tenant_credentials
-    token, tenant_phone_id, _ = get_tenant_credentials(tenant_id)
+    from services.tenant_credentials import get_tenant_connection_config
+    config = get_tenant_connection_config(tenant_id)
+
+    connection_type = config.get("connection_type", "meta")
+
+    if connection_type == "openwa":
+        server_url = config.get("openwa_server_url", "")
+        api_key = config.get("openwa_api_key", "")
+        session_id = config.get("openwa_session_id", "")
+
+        if not server_url or not api_key or not session_id:
+            return {"ok": False, "error": "OpenWA no configurat", "wamid": None}
+
+        # Build correct chatId format: phone@c.us or lid_xxx → xxx@lid
+        phone = message.phone
+        if phone.startswith('lid_'):
+            chat_id = phone[4:] + '@lid'
+        else:
+            chat_id = normalize_phone(phone) + '@c.us'
+        return await _send_openwa_text(server_url, api_key, session_id, chat_id, message.body)
+
+    # Meta path (default)
+    token = config.get("access_token")
+    tenant_phone_id = config.get("phone_number_id")
 
     if not token or token.startswith('PLACEHOLDER'):
         logger.warning("WhatsApp credentials not configured - message not sent")
@@ -194,25 +216,28 @@ async def send_portal_link(phone: str, ticket_id: str, portal_url: str, language
 
 
 async def mark_message_as_read(message_id: str, tenant_id: str = None) -> bool:
-    """Mark a WhatsApp message as read"""
-    from services.tenant_credentials import get_tenant_credentials
-    token, phone_id, _ = get_tenant_credentials(tenant_id)
-    if not token or token.startswith('PLACEHOLDER'):
+    """Mark a WhatsApp message as read. No-op for OpenWA."""
+    from services.tenant_credentials import get_tenant_connection_config
+    config = get_tenant_connection_config(tenant_id)
+
+    if config.get("connection_type") == "openwa":
+        return True  # OpenWA doesn't have a read-receipt endpoint
+
+    token = config.get("access_token")
+    phone_id = config.get("phone_number_id")
+    if not token or token.startswith('PLACEHOLDER') or not phone_id:
         return False
 
     url = f"{WHATSAPP_API_URL}/{phone_id}/messages"
-
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    
     payload = {
         "messaging_product": "whatsapp",
         "status": "read",
         "message_id": message_id
     }
-    
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, json=payload, headers=headers)
@@ -223,17 +248,23 @@ async def mark_message_as_read(message_id: str, tenant_id: str = None) -> bool:
 
 
 async def upload_media_to_whatsapp(file_bytes: bytes, mime_type: str, filename: str, tenant_id: str = None) -> Optional[str]:
-    """Upload media to WhatsApp and return the media ID"""
-    from services.tenant_credentials import get_tenant_credentials
-    token, phone_id, _ = get_tenant_credentials(tenant_id)
+    """Upload media to WhatsApp and return the media ID.
+    For OpenWA, media is sent directly (no separate upload) — returns '__openwa_direct__' sentinel.
+    """
+    from services.tenant_credentials import get_tenant_connection_config
+    config = get_tenant_connection_config(tenant_id)
+
+    if config.get("connection_type") == "openwa":
+        return "__openwa_direct__"
+
+    token = config.get("access_token")
+    phone_id = config.get("phone_number_id")
     if not token or token.startswith('PLACEHOLDER'):
         logger.warning("WhatsApp credentials not configured")
         return None
 
     url = f"{WHATSAPP_API_URL}/{phone_id}/media"
-    headers = {
-        "Authorization": f"Bearer {token}",
-    }
+    headers = {"Authorization": f"Bearer {token}"}
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -243,7 +274,6 @@ async def upload_media_to_whatsapp(file_bytes: bytes, mime_type: str, filename: 
                 'type': (None, mime_type),
             }
             response = await client.post(url, headers=headers, files=files)
-
             if response.status_code == 200:
                 media_id = response.json().get('id')
                 logger.info(f"Media uploaded: {media_id}")
@@ -257,57 +287,86 @@ async def upload_media_to_whatsapp(file_bytes: bytes, mime_type: str, filename: 
 
 
 async def send_whatsapp_template(phone: str, template_name: str, language_code: str = "ca", components: list = None, tenant_id: str = None) -> bool:
-    """Send a WhatsApp template message (for messages outside 24h window)"""
-    from services.tenant_credentials import get_tenant_credentials
-    token, phone_id, _ = get_tenant_credentials(tenant_id)
+    """Send a WhatsApp template message (for messages outside 24h window).
+    For OpenWA, falls back to sending as a regular text message (no 24h restriction).
+    """
+    from services.tenant_credentials import get_tenant_connection_config
+    config = get_tenant_connection_config(tenant_id)
+
+    if config.get("connection_type") == "openwa":
+        server_url = config.get("openwa_server_url", "")
+        api_key = config.get("openwa_api_key", "")
+        session_id = config.get("openwa_session_id", "")
+        if not server_url or not api_key or not session_id:
+            return False
+        if phone.startswith('lid_'):
+            chat_id = phone[4:] + '@lid'
+        else:
+            chat_id = normalize_phone(phone) + '@c.us'
+        # For OpenWA, just send the template name as a regular message
+        result = await _send_openwa_text(server_url, api_key, session_id, chat_id,
+                                         f"[Template: {template_name}]")
+        return result.get("ok", False)
+
+    token = config.get("access_token")
+    phone_id = config.get("phone_number_id")
     if not token or token.startswith('PLACEHOLDER'):
         logger.warning("WhatsApp credentials not configured - template not sent")
         return False
 
     url = f"{WHATSAPP_API_URL}/{phone_id}/messages"
-
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-
-    # Map our language codes to WhatsApp template language codes
     wa_lang_map = {"ca": "ca", "es": "es", "en": "en_US"}
     wa_lang = wa_lang_map.get(language_code, "ca")
-
     payload = {
         "messaging_product": "whatsapp",
         "to": phone,
         "type": "template",
-        "template": {
-            "name": template_name,
-            "language": {"code": wa_lang},
-        }
+        "template": {"name": template_name, "language": {"code": wa_lang}},
     }
-
     if components:
         payload["template"]["components"] = components
 
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, json=payload, headers=headers)
-
             if response.status_code == 200:
                 logger.info(f"WhatsApp template '{template_name}' sent to {phone}")
                 return True
             else:
                 logger.warning(f"WhatsApp template API error: {response.status_code} - {response.text}")
                 return False
-
     except Exception as e:
         logger.error(f"Failed to send WhatsApp template: {e}")
         return False
 
 
 async def send_whatsapp_document(phone: str, media_id: str, filename: str, caption: str = "", tenant_id: str = None) -> bool:
-    """Send a document via WhatsApp using a previously uploaded media ID"""
-    from services.tenant_credentials import get_tenant_credentials
-    token, phone_id, _ = get_tenant_credentials(tenant_id)
+    """Send a document via WhatsApp. For OpenWA, media is sent directly."""
+    from services.tenant_credentials import get_tenant_connection_config
+    config = get_tenant_connection_config(tenant_id)
+
+    if config.get("connection_type") == "openwa":
+        # Media sent directly via send_openwa_media — document sending requires file_bytes
+        # which we don't have here. Fall back to text notification.
+        server_url = config.get("openwa_server_url", "")
+        api_key = config.get("openwa_api_key", "")
+        session_id = config.get("openwa_session_id", "")
+        if not server_url or not api_key or not session_id:
+            return False
+        if phone.startswith('lid_'):
+            chat_id = phone[4:] + '@lid'
+        else:
+            chat_id = normalize_phone(phone) + '@c.us'
+        text = f"[Document: {filename}] {caption}".strip()
+        result = await _send_openwa_text(server_url, api_key, session_id, chat_id, text)
+        return result.get("ok", False)
+
+    token = config.get("access_token")
+    phone_id = config.get("phone_number_id")
     if not token or token.startswith('PLACEHOLDER'):
         return False
 
@@ -316,19 +375,13 @@ async def send_whatsapp_document(phone: str, media_id: str, filename: str, capti
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
         "to": phone,
         "type": "document",
-        "document": {
-            "id": media_id,
-            "filename": filename,
-            "caption": caption
-        }
+        "document": {"id": media_id, "filename": filename, "caption": caption}
     }
-
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, json=payload, headers=headers)
@@ -341,3 +394,111 @@ async def send_whatsapp_document(phone: str, media_id: str, filename: str, capti
     except Exception as e:
         logger.error(f"Failed to send document: {e}")
         return False
+
+
+# ═══════════════════════════════════════════════════════════════════
+# OpenWA Gateway Helpers
+# ═══════════════════════════════════════════════════════════════════
+
+async def _send_openwa_text(server_url: str, api_key: str, session_id: str,
+                            chat_id: str, text: str) -> dict:
+    """Send a text message via OpenWA REST API.
+
+    Returns: {"ok": bool, "error": str or None, "wamid": str or None}
+    """
+    url = f"{server_url.rstrip('/')}/api/sessions/{session_id}/messages/send-text"
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
+    payload = {"chatId": chat_id, "text": text}
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(url, json=payload, headers=headers)
+
+            if response.status_code in (200, 201):
+                data = response.json()
+                msg_id = data.get("messageId") or data.get("id") or "openwa_" + chat_id
+                logger.info(f"OpenWA message sent to {chat_id}")
+                return {"ok": True, "error": None, "wamid": msg_id}
+
+            err_msg = response.text or f"HTTP {response.status_code}"
+            logger.error(f"OpenWA send error: {response.status_code} - {err_msg}")
+            return {"ok": False, "error": err_msg, "wamid": None}
+
+    except httpx.ConnectError:
+        logger.error(f"OpenWA server unreachable: {server_url}")
+        return {"ok": False, "error": "OpenWA server unreachable", "wamid": None}
+    except Exception as e:
+        logger.error(f"OpenWA send failed: {e}")
+        return {"ok": False, "error": str(e), "wamid": None}
+
+
+async def send_openwa_media(server_url: str, api_key: str, session_id: str,
+                            chat_id: str, media_type: str, file_bytes: bytes,
+                            filename: str, mime_type: str, caption: str = "") -> dict:
+    """Send media (image/document/video) via OpenWA REST API.
+    OpenWA sends media directly in one multipart request (no separate upload step).
+
+    Returns: {"ok": bool, "error": str or None, "wamid": str or None}
+    """
+    # Map media_type to OpenWA endpoint
+    endpoint_map = {
+        "image": "send-image",
+        "document": "send-document",
+        "video": "send-video",
+        "audio": "send-audio",
+    }
+    action = endpoint_map.get(media_type, "send-document")
+    url = f"{server_url.rstrip('/')}/api/sessions/{session_id}/messages/{action}"
+
+    headers = {"X-API-Key": api_key}
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            files = {"file": (filename, file_bytes, mime_type)}
+            data = {"chatId": chat_id}
+            if caption:
+                data["caption"] = caption
+
+            response = await client.post(url, data=data, files=files, headers=headers)
+
+            if response.status_code in (200, 201):
+                resp_data = response.json()
+                msg_id = resp_data.get("messageId") or resp_data.get("id") or "openwa_media"
+                logger.info(f"OpenWA media sent to {chat_id}: {filename}")
+                return {"ok": True, "error": None, "wamid": msg_id}
+
+            err_msg = response.text or f"HTTP {response.status_code}"
+            logger.error(f"OpenWA media send error: {response.status_code} - {err_msg}")
+            return {"ok": False, "error": err_msg, "wamid": None}
+
+    except httpx.ConnectError:
+        return {"ok": False, "error": "OpenWA server unreachable", "wamid": None}
+    except Exception as e:
+        logger.error(f"OpenWA media send failed: {e}")
+        return {"ok": False, "error": str(e), "wamid": None}
+
+
+async def validate_openwa_connection(server_url: str, api_key: str, session_id: str) -> dict:
+    """Test OpenWA connection by fetching session info.
+
+    Returns: {"ok": bool, "status": str, "error": str or None}
+    """
+    url = f"{server_url.rstrip('/')}/api/sessions/{session_id}"
+    headers = {"X-API-Key": api_key}
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(url, headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                state = data.get("state") or data.get("status") or "CONNECTED"
+                return {"ok": True, "status": state, "error": None}
+            elif response.status_code == 404:
+                return {"ok": False, "status": "not_found", "error": f"Session '{session_id}' no trobada"}
+            else:
+                return {"ok": False, "status": "error", "error": f"HTTP {response.status_code}: {response.text[:200]}"}
+
+    except httpx.ConnectError:
+        return {"ok": False, "status": "error", "error": "No s'ha pogut connectar al servidor OpenWA"}
+    except Exception as e:
+        return {"ok": False, "status": "error", "error": str(e)}

@@ -127,6 +127,9 @@ class WAAccountUpdate(BaseModel):
     account_name: Optional[str] = None
     phone_number_id: Optional[str] = None
     whatsapp_business_account_id: Optional[str] = None
+    connection_type: Optional[str] = None       # 'meta' or 'openwa'
+    openwa_server_url: Optional[str] = None
+    openwa_session_id: Optional[str] = None
 
 
 @router.get("/whatsapp-account")
@@ -192,27 +195,98 @@ async def update_whatsapp_account(req: WAAccountUpdate, authorization: Optional[
 
 @router.post("/whatsapp-account/validate")
 async def validate_connection(authorization: Optional[str] = Header(None)):
-    """Validate the WhatsApp connection by calling Meta API"""
+    """Validate the WhatsApp connection (Meta API or OpenWA Gateway)"""
     user = await get_admin_user(authorization)
     supabase = get_supabase_admin()
     tenant_id = user.get('tenant_id')
 
-    account = supabase.table('whatsapp_accounts').select('id, phone_number_id').eq('tenant_id', tenant_id).limit(1).execute()
+    account = supabase.table('whatsapp_accounts').select(
+        'id, connection_type, phone_number_id, openwa_server_url, openwa_session_id'
+    ).eq('tenant_id', tenant_id).limit(1).execute()
     if not account.data:
         raise HTTPException(status_code=404, detail="Compte no trobat")
 
     acc = account.data[0]
-    phone_id = acc['phone_number_id']
+    connection_type = acc.get('connection_type') or 'meta'
 
-    # Get decrypted token
+    # ── OpenWA validation ───────────────────────────────────
+    if connection_type == 'openwa':
+        server_url = acc.get('openwa_server_url', '')
+        session_id = acc.get('openwa_session_id', '')
+        secrets = supabase.table('whatsapp_secrets').select('encrypted_openwa_api_key').eq(
+            'whatsapp_account_id', acc['id']).limit(1).execute()
+        api_key = None
+        if secrets.data and secrets.data[0].get('encrypted_openwa_api_key'):
+            api_key = decrypt_value(secrets.data[0]['encrypted_openwa_api_key'])
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        if not server_url or not api_key or not session_id:
+            supabase.table('whatsapp_accounts').update({
+                'connection_status': 'error',
+                'token_status': 'not_set',
+                'last_validation_at': now,
+                'updated_at': now,
+            }).eq('id', acc['id']).execute()
+            return {"valid": False, "error": "OpenWA: URL, API Key o Session ID no configurat"}
+
+        from services.whatsapp import validate_openwa_connection
+        result = await validate_openwa_connection(server_url, api_key, session_id)
+
+        status_update = {
+            'connection_status': 'connected' if result['ok'] else 'error',
+            'token_status': 'valid' if result['ok'] else 'error',
+            'last_validation_at': now,
+            'updated_at': now,
+        }
+        supabase.table('whatsapp_accounts').update(status_update).eq('id', acc['id']).execute()
+
+        # Auto-register webhook on OpenWA after successful validation
+        webhook_registered = False
+        if result['ok']:
+            try:
+                base_url = os.environ.get('BASE_URL', 'http://localhost:8000')
+                # Use the frontend-accessible URL if available via Referer or known IP
+                webhook_url = f"{base_url}/api/whatsapp/webhook/openwa"
+                webhook_payload = {
+                    "url": webhook_url,
+                    "events": ["message.received"],
+                }
+                async with httpx.AsyncClient(timeout=10) as openwa_client:
+                    wh_resp = await openwa_client.post(
+                        f"{server_url.rstrip('/')}/api/sessions/{session_id}/webhooks",
+                        headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+                        json=webhook_payload,
+                    )
+                if wh_resp.status_code in (200, 201):
+                    webhook_registered = True
+                    logger.info(f"OpenWA webhook auto-registered: {webhook_url}")
+                    supabase.table('whatsapp_accounts').update({
+                        'webhook_status': 'verified',
+                        'updated_at': datetime.now(timezone.utc).isoformat(),
+                    }).eq('id', acc['id']).execute()
+                else:
+                    logger.warning(f"OpenWA webhook registration returned {wh_resp.status_code}: {wh_resp.text[:200]}")
+            except Exception as wh_err:
+                logger.warning(f"OpenWA webhook registration failed (non-fatal): {wh_err}")
+
+        await log_audit(tenant_id, user['id'], 'validate', 'whatsapp_account', acc['id'],
+                        f"OpenWA validation: {'OK' if result['ok'] else result.get('error', 'Failed')}"
+                        + (f" + webhook registered ({webhook_url})" if webhook_registered else ""))
+        return {
+            "valid": result['ok'],
+            "data": result,
+            "connection_type": "openwa",
+            "webhook_registered": webhook_registered,
+        }
+
+    # ── Meta validation (original) ──────────────────────────
+    phone_id = acc.get('phone_number_id')
     secrets = supabase.table('whatsapp_secrets').select('encrypted_access_token').eq(
         'whatsapp_account_id', acc['id']).limit(1).execute()
-
     access_token = None
     if secrets.data and secrets.data[0].get('encrypted_access_token'):
         access_token = decrypt_value(secrets.data[0]['encrypted_access_token'])
-
-    # Fallback to .env
     if not access_token:
         access_token = os.environ.get('WHATSAPP_ACCESS_TOKEN', '')
 
@@ -248,7 +322,7 @@ async def validate_connection(authorization: Optional[str] = Header(None)):
             }).eq('id', acc['id']).execute()
 
             await log_audit(tenant_id, user['id'], 'validate', 'whatsapp_account', acc['id'], 'Connection validated OK')
-            return {"valid": True, "data": data}
+            return {"valid": True, "data": data, "connection_type": "meta"}
         else:
             supabase.table('whatsapp_accounts').update({
                 'connection_status': 'error',
@@ -256,7 +330,6 @@ async def validate_connection(authorization: Optional[str] = Header(None)):
                 'last_validation_at': now,
                 'updated_at': now,
             }).eq('id', acc['id']).execute()
-
             return {"valid": False, "error": f"Meta API: {resp.status_code} - {resp.text[:200]}"}
 
     except Exception as e:
@@ -290,6 +363,7 @@ class SecretsUpdate(BaseModel):
     access_token: Optional[str] = None
     app_secret: Optional[str] = None
     verify_token: Optional[str] = None
+    openwa_api_key: Optional[str] = None
     token_expires_at: Optional[str] = None
 
 
@@ -308,8 +382,11 @@ async def get_secrets(authorization: Optional[str] = Header(None)):
         'whatsapp_account_id', account.data[0]['id']).limit(1).execute()
 
     if not result.data:
-        return {"secrets": {"has_access_token": False, "has_app_secret": False, "has_verify_token": False,
-                            "token_expires_at": None, "last_rotated_at": None}}
+        return {"secrets": {
+            "has_access_token": False, "has_app_secret": False, "has_verify_token": False,
+            "has_openwa_api_key": False,
+            "token_expires_at": None, "last_rotated_at": None,
+        }}
 
     s = result.data[0]
     return {"secrets": {
@@ -319,6 +396,8 @@ async def get_secrets(authorization: Optional[str] = Header(None)):
         "masked_app_secret": mask_value(decrypt_value(s['encrypted_app_secret']), 4) if s.get('encrypted_app_secret') else '',
         "has_verify_token": bool(s.get('encrypted_verify_token')),
         "masked_verify_token": mask_value(decrypt_value(s['encrypted_verify_token'])) if s.get('encrypted_verify_token') else '',
+        "has_openwa_api_key": bool(s.get('encrypted_openwa_api_key')),
+        "masked_openwa_api_key": mask_value(decrypt_value(s['encrypted_openwa_api_key'])) if s.get('encrypted_openwa_api_key') else '',
         "token_expires_at": s.get('token_expires_at'),
         "last_rotated_at": s.get('last_rotated_at'),
     }}
@@ -350,6 +429,9 @@ async def update_secrets(req: SecretsUpdate, authorization: Optional[str] = Head
     if req.verify_token is not None:
         updates['encrypted_verify_token'] = encrypt_value(req.verify_token)
         changed.append('verify_token')
+    if req.openwa_api_key is not None:
+        updates['encrypted_openwa_api_key'] = encrypt_value(req.openwa_api_key)
+        changed.append('openwa_api_key')
     if req.token_expires_at is not None:
         updates['token_expires_at'] = req.token_expires_at
 
