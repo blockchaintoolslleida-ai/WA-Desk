@@ -31,16 +31,18 @@ export default function SetupWizard({ t, account, secrets, onComplete }) {
 
   const isOpenWA = connType === 'openwa';
 
-  // Auto-advance based on existing config
+  // Auto-advance based on existing config. Stay at step 0 if nothing configured yet.
   useEffect(() => {
     if (isOpenWA) {
       if (hasOpenWAUrl && hasOpenWAKey && hasOpenWASession) setStep(3);
       else if (hasOpenWAUrl && hasOpenWAKey) setStep(2);
-      else setStep(1);
+      else if (hasOpenWAUrl || hasOpenWAKey) setStep(1);
+      else setStep(0); // nothing configured — stay at type selection
     } else {
       if (hasPhone && hasWaba && hasCert) setStep(3);
       else if (hasPhone && hasWaba) setStep(2);
-      else setStep(1);
+      else if (hasPhone || hasWaba || hasCert) setStep(1);
+      else setStep(0); // nothing configured — stay at type selection
     }
   }, []); // Only on mount
 
