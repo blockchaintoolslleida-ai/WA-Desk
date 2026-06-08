@@ -100,10 +100,12 @@ async def create_agent(req: AgentCreate, authorization: Optional[str] = Header(N
         if not auth_response.user:
             raise HTTPException(status_code=400, detail="Error creant usuari d'autenticacio")
 
+        from local_db import hash_password
         profile_data = {
             'id': auth_response.user.id,
             'full_name': req.full_name.strip(),
             'email': req.email.strip(),
+            'password_hash': hash_password(req.password),
             'role': target_role,
             'phone': req.phone.strip() if req.phone else None,
             'is_active': True,

@@ -742,10 +742,12 @@ async def assign_user_to_tenant(tenant_id: str, req: AssignUserRequest, authoriz
             raise HTTPException(status_code=400, detail="Ja existeix un usuari amb aquest email")
         raise HTTPException(status_code=500, detail=f"Error creant usuari: {str(e)[:100]}")
 
+    from local_db import hash_password
     profile = {
         'id': uid,
         'full_name': req.full_name.strip(),
         'email': req.email.strip(),
+        'password_hash': hash_password(req.password),
         'role': req.role,
         'is_active': True,
         'tenant_id': tenant_id,
