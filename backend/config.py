@@ -18,6 +18,9 @@ WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get('WHATSAPP_BUSINESS_ACCOUNT_ID')
 WHATSAPP_ACCESS_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
 WHATSAPP_API_URL = 'https://graph.facebook.com/v25.0'
 
+# Business phone number — used to detect messages sent from the mobile WhatsApp Business app
+WHATSAPP_BUSINESS_PHONE_NUMBER = os.environ.get('WHATSAPP_BUSINESS_PHONE_NUMBER', '')
+
 # JWT Configuration (local — no longer depends on Supabase)
 JWT_SECRET = os.environ.get('JWT_SECRET', 'local-dev-secret-change-in-production')
 JWT_ALGORITHM = 'HS256'

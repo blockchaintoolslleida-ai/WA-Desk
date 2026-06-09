@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from '../contexts/LanguageContext';
-import { PaperPlaneRight, CheckSquare, Square, PlusCircle, ArrowsLeftRight, WarningCircle, Tag, ArrowBendUpLeft, X, Paperclip, Image, FileDoc, MicrophoneStage, VideoCamera, DownloadSimple, Play, Timer, Lock, PaperPlaneTilt } from '@phosphor-icons/react';
+import { PaperPlaneRight, CheckSquare, Square, PlusCircle, ArrowsLeftRight, WarningCircle, Tag, ArrowBendUpLeft, X, Paperclip, Image, FileDoc, MicrophoneStage, VideoCamera, DownloadSimple, Play, Timer, Lock, PaperPlaneTilt, DeviceMobile } from '@phosphor-icons/react';
 import { windowApi } from '../lib/api';
 import { toast } from 'sonner';
 
@@ -397,6 +397,8 @@ export default function ChatView({
             }
             const msg = item.data;
             const isOut = msg.direction === 'outgoing';
+            const isMobile = msg.direction === 'outbound_from_mobile';
+            const isFromAgent = isOut || isMobile;
             const isSelected = selectedMsgIds.includes(msg.id);
             const needsClass = msg.needs_classification || (!msg.case_id && msg.direction === 'incoming');
             const caseInfo = msg.case_id ? caseColorMap[msg.case_id] : null;
@@ -404,17 +406,17 @@ export default function ChatView({
             const repliedCaseInfo = repliedMsg?.case_id ? caseColorMap[repliedMsg.case_id] : null;
             const hasMedia = msg.media_url && msg.message_type !== 'text';
 
-            const showCheckbox = selectionMode || (needsClass && !isOut);
+            const showCheckbox = selectionMode || (needsClass && !isFromAgent);
 
             return (
-              <div key={msg.id} data-testid={`message-${msg.id}`} className={`group flex mb-2 animate-fade-in ${isOut ? 'justify-end' : 'justify-start'}`}>
+              <div key={msg.id} data-testid={`message-${msg.id}`} className={`group flex mb-2 animate-fade-in ${isFromAgent ? 'justify-end' : 'justify-start'}`}>
                 {showCheckbox && (
                   <button onClick={() => onToggleMsg(msg.id)} className="mr-2 mt-1 flex-shrink-0">
                     {isSelected ? <CheckSquare size={18} className="text-[#2563EB]" weight="fill" /> : <Square size={18} className="text-[#CBD5E1]" />}
                   </button>
                 )}
 
-                {!isOut && !showCheckbox && (
+                {!isFromAgent && !showCheckbox && (
                   <button data-testid={`reply-btn-${msg.id}`} onClick={() => handleReply(msg)}
                     className="opacity-0 group-hover:opacity-100 transition-opacity self-center mr-1.5 p-1 rounded-full hover:bg-[#E2E8F0] text-[#64748B]"
                     title={t('chat.reply')}>
@@ -422,22 +424,22 @@ export default function ChatView({
                   </button>
                 )}
 
-                <div className={`relative ${hasMedia ? 'max-w-[65%]' : 'max-w-[60%]'} ${isOut ? 'bubble-outgoing' : 'bubble-incoming'} px-3 py-2 ${isSelected ? 'ring-2 ring-[#2563EB] ring-offset-1' : ''}`}
-                  style={caseInfo && !isOut ? { borderLeft: `3px solid ${caseInfo.dot}` } : caseInfo && isOut ? { borderRight: `3px solid ${caseInfo.dot}` } : needsClass && !isOut ? { borderLeft: `3px solid ${UNCLASSIFIED_COLOR.dot}` } : {}}>
+                <div className={`relative ${hasMedia ? 'max-w-[65%]' : 'max-w-[60%]'} ${isOut ? 'bubble-outgoing' : isMobile ? 'bubble-mobile' : 'bubble-incoming'} px-3 py-2 ${isSelected ? 'ring-2 ring-[#2563EB] ring-offset-1' : ''}`}
+                  style={caseInfo && !isFromAgent ? { borderLeft: `3px solid ${caseInfo.dot}` } : caseInfo && isFromAgent ? { borderRight: `3px solid ${caseInfo.dot}` } : needsClass && !isFromAgent ? { borderLeft: `3px solid ${UNCLASSIFIED_COLOR.dot}` } : {}}>
 
                   {/* Quoted reply */}
                   {repliedMsg && (
                     <div className="mb-1.5 px-2 py-1.5 rounded-md border-l-[3px] cursor-pointer"
-                      style={{ background: isOut ? 'rgba(255,255,255,0.1)' : '#E8ECF1', borderLeftColor: repliedCaseInfo?.dot || '#94A3B8' }}>
-                      <p className={`text-[10px] font-semibold ${isOut ? 'text-blue-300' : 'text-[#475569]'}`}>
+                      style={{ background: isOut ? 'rgba(255,255,255,0.1)' : isMobile ? 'rgba(0,0,0,0.05)' : '#E8ECF1', borderLeftColor: repliedCaseInfo?.dot || '#94A3B8' }}>
+                      <p className={`text-[10px] font-semibold ${isOut ? 'text-blue-300' : isMobile ? 'text-emerald-700' : 'text-[#475569]'}`}>
                         {repliedMsg.direction === 'incoming' ? (contact.name || contact.phone) : (repliedMsg.sender_agent_name || t('chat.you_label'))}
                       </p>
-                      <p className={`text-[11px] line-clamp-2 ${isOut ? 'opacity-70' : 'text-[#64748B]'}`}>{repliedMsg.body}</p>
+                      <p className={`text-[11px] line-clamp-2 ${isFromAgent ? 'opacity-70' : 'text-[#64748B]'}`}>{repliedMsg.body}</p>
                     </div>
                   )}
 
                   {/* Case tag */}
-                  {!isOut && caseInfo && (
+                  {!isFromAgent && caseInfo && (
                     <div className="flex items-center gap-1 mb-1">
                       <button onClick={() => onSelectCase(msg.case_id)} className="inline-flex items-center gap-1 px-1.5 py-0 rounded text-[9px] font-medium hover:opacity-80 transition-opacity cursor-pointer" style={{ background: caseInfo.bg, color: caseInfo.text }}>
                         <span className="w-1.5 h-1.5 rounded-full" style={{ background: caseInfo.dot }} /><span className="truncate max-w-[100px]">{caseInfo.title}</span>
@@ -445,7 +447,7 @@ export default function ChatView({
                     </div>
                   )}
 
-                  {needsClass && !isOut && !caseInfo && (
+                  {needsClass && !isFromAgent && !caseInfo && (
                     <div className="flex items-center gap-1 mb-1">
                       <span className="inline-flex items-center gap-1 px-1.5 py-0 rounded text-[9px] font-medium" style={{ background: UNCLASSIFIED_COLOR.bg, color: UNCLASSIFIED_COLOR.text }}>
                         <WarningCircle size={10} />{t('chat.needs_classification')}
@@ -453,23 +455,33 @@ export default function ChatView({
                     </div>
                   )}
 
+                  {/* Mobile-sent indicator */}
+                  {isMobile && (
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <DeviceMobile size={10} weight="bold" />
+                        Enviado desde móvil
+                      </span>
+                    </div>
+                  )}
+
                   {isOut && msg.sender_agent_name && <p className="text-xs font-semibold opacity-90 mb-0.5">{msg.sender_agent_name}</p>}
 
                   {/* Media content */}
-                  {hasMedia && <MediaContent msg={msg} isOut={isOut} />}
+                  {hasMedia && <MediaContent msg={msg} isOut={isOut || isMobile} />}
 
                   {/* Text body — hide if media is showing (only show real captions, not placeholders) */}
                   {msg.body && !(hasMedia && /^\[/.test(msg.body)) && (
                     <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
                   )}
 
-                  <div className={`flex items-center gap-1.5 mt-1 ${isOut ? 'justify-end' : 'justify-between'}`}>
-                    {isOut && caseInfo && (
+                  <div className={`flex items-center gap-1.5 mt-1 ${isFromAgent ? 'justify-end' : 'justify-between'}`}>
+                    {isFromAgent && caseInfo && (
                       <button onClick={() => onSelectCase(msg.case_id)} className="inline-flex items-center gap-1 text-[9px] opacity-60 hover:opacity-90 transition-opacity cursor-pointer">
                         <span className="w-1.5 h-1.5 rounded-full" style={{ background: caseInfo.dot }} /><span className="truncate max-w-[80px]">{caseInfo.title}</span>
                       </button>
                     )}
-                    {isOut && msg.delivery_status === 'failed' && (
+                    {isFromAgent && msg.delivery_status === 'failed' && (
                       <span data-testid={`msg-failed-${msg.id}`}
                         title={msg.delivery_error || t('chat.msg_not_delivered')}
                         className="inline-flex items-center gap-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-100">
@@ -477,11 +489,11 @@ export default function ChatView({
                         {t('chat.msg_failed')}
                       </span>
                     )}
-                    <span className={`text-[10px] ${isOut ? 'opacity-60' : 'text-[#64748B]'}`}>{formatTime(msg.sent_at, locale)}</span>
+                    <span className={`text-[10px] ${isOut ? 'opacity-60' : isMobile ? 'text-emerald-600' : 'text-[#64748B]'}`}>{formatTime(msg.sent_at, locale)}</span>
                   </div>
                 </div>
 
-                {isOut && !selectionMode && (
+                {isFromAgent && !selectionMode && (
                   <button data-testid={`reply-btn-${msg.id}`} onClick={() => handleReply(msg)}
                     className="opacity-0 group-hover:opacity-100 transition-opacity self-center ml-1.5 p-1 rounded-full hover:bg-[#E2E8F0] text-[#64748B]"
                     title={t('chat.reply')}>
@@ -502,7 +514,7 @@ export default function ChatView({
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-[#475569]">
                 <ArrowBendUpLeft size={12} className="inline mr-1" />
-                {replyTo.direction === 'incoming' ? (contact.name || contact.phone) : (replyTo.sender_agent_name || t('chat.you_label'))}
+                {replyTo.direction === 'incoming' ? (contact.name || contact.phone) : replyTo.direction === 'outbound_from_mobile' ? 'Agente (móvil)' : (replyTo.sender_agent_name || t('chat.you_label'))}
                 {replyColor && (
                   <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0 rounded text-[9px] font-medium" style={{ background: replyColor.bg, color: replyColor.text }}>
                     <span className="w-1.5 h-1.5 rounded-full" style={{ background: replyColor.dot }} />{replyColor.title}

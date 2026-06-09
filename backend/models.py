@@ -27,6 +27,7 @@ class CasePriority(str, Enum):
 class MessageDirection(str, Enum):
     INCOMING = "incoming"
     OUTGOING = "outgoing"
+    OUTBOUND_FROM_MOBILE = "outbound_from_mobile"
 
 
 class MessageType(str, Enum):

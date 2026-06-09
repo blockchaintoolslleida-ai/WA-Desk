@@ -706,6 +706,8 @@ CREATE TABLE IF NOT EXISTS messages (
     reply_to_id TEXT,
     delivery_status TEXT,
     delivery_error TEXT,
+    sender_number TEXT,
+    recipient_number TEXT,
     sent_at TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
@@ -932,6 +934,8 @@ def _migrate_schema(conn):
         "ALTER TABLE whatsapp_accounts ADD COLUMN openwa_session_id TEXT DEFAULT ''",
         "ALTER TABLE whatsapp_secrets ADD COLUMN encrypted_openwa_api_key TEXT",
         "ALTER TABLE contacts ADD COLUMN source TEXT DEFAULT ''",
+        "ALTER TABLE messages ADD COLUMN sender_number TEXT",
+        "ALTER TABLE messages ADD COLUMN recipient_number TEXT",
     ]
     for sql in migrations:
         try:
