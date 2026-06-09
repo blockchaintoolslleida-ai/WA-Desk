@@ -11,7 +11,7 @@ from typing import Optional
 from datetime import datetime, timezone
 import uuid
 from database import get_supabase_admin
-from config import WHATSAPP_VERIFY_TOKEN
+from config import WHATSAPP_VERIFY_TOKEN, WHATSAPP_BUSINESS_PHONE_NUMBER
 from services.whatsapp import parse_webhook_payload, mark_message_as_read, normalize_phone
 from services.media import process_incoming_media
 from services.secrets_manager import decrypt_value
@@ -80,9 +80,10 @@ async def receive_webhook(request: Request):
         return {"status": "error", "message": str(e)}
 
 
-async def process_inbound_message(message, recv_phone_id=None, tenant_id=None):
+async def process_inbound_message(message, recv_phone_id=None, tenant_id=None, direction='incoming', sender_number=None, recipient_number=None):
     """Process inbound WhatsApp message with multi-case and multi-tenant logic.
     tenant_id can be passed explicitly (OpenWA) or resolved from recv_phone_id (Meta).
+    direction: 'incoming' (from customer), 'outbound_from_mobile' (agent sent from phone).
     """
     supabase = get_supabase_admin()
     now = datetime.now(timezone.utc).isoformat()
@@ -155,12 +156,15 @@ async def process_inbound_message(message, recv_phone_id=None, tenant_id=None):
             conversation = conv_res.data[0]
             conversation_id = conversation['id']
 
-            # Update conversation
-            supabase.table('conversations').update({
+            # Update conversation — don't increment unread for mobile-sent messages
+            is_mobile = direction == 'outbound_from_mobile'
+            update_fields = {
                 'last_message_at': now,
                 'updated_at': now,
-                'unread_count': conversation.get('unread_count', 0) + 1
-            }).eq('id', conversation_id).execute()
+            }
+            if not is_mobile:
+                update_fields['unread_count'] = conversation.get('unread_count', 0) + 1
+            supabase.table('conversations').update(update_fields).eq('id', conversation_id).execute()
         else:
             # Create new conversation (no status, no case)
             conversation_id = str(uuid.uuid4())
@@ -169,7 +173,7 @@ async def process_inbound_message(message, recv_phone_id=None, tenant_id=None):
                 'contact_id': contact_id,
                 'status': None,
                 'last_message_at': now,
-                'unread_count': 1,
+                'unread_count': 0 if direction == 'outbound_from_mobile' else 1,
                 'is_active': True,
                 'tenant_id': resolved_tenant_id,
                 'created_at': now,
@@ -178,6 +182,7 @@ async def process_inbound_message(message, recv_phone_id=None, tenant_id=None):
             supabase.table('conversations').insert(conv_data).execute()
 
         # Determine if message should auto-link to a case
+        # Mobile-sent messages: auto-link to single case but never flag for classification
         active_cases = supabase.table('cases').select('id').eq(
             'conversation_id', conversation_id
         ).eq('is_active', True).execute()
@@ -185,6 +190,7 @@ async def process_inbound_message(message, recv_phone_id=None, tenant_id=None):
 
         case_id = None
         needs_classification = False
+        is_mobile = direction == 'outbound_from_mobile'
 
         if len(active_case_list) == 1:
             # Auto-assign to the single active case
@@ -192,12 +198,13 @@ async def process_inbound_message(message, recv_phone_id=None, tenant_id=None):
             supabase.table('cases').update({
                 'last_activity_at': now, 'updated_at': now
             }).eq('id', case_id).execute()
-        elif len(active_case_list) > 1:
-            # Multiple cases: needs classification
-            needs_classification = True
-        else:
-            # No cases: message pending classification
-            needs_classification = True
+        elif not is_mobile:
+            if len(active_case_list) > 1:
+                # Multiple cases: needs classification
+                needs_classification = True
+            else:
+                # No cases: message pending classification
+                needs_classification = True
 
         # Insert message
         # If media, download from WhatsApp and store locally
@@ -216,7 +223,7 @@ async def process_inbound_message(message, recv_phone_id=None, tenant_id=None):
             'id': str(uuid.uuid4()),
             'conversation_id': conversation_id,
             'case_id': case_id,
-            'direction': 'incoming',
+            'direction': direction,
             'message_type': message.media_type or 'text',
             'body': message.body,
             'media_url': stored_media_url,
@@ -225,6 +232,10 @@ async def process_inbound_message(message, recv_phone_id=None, tenant_id=None):
             'sent_at': now,
             'created_at': now
         }
+        if sender_number:
+            msg_data['sender_number'] = sender_number
+        if recipient_number:
+            msg_data['recipient_number'] = recipient_number
         supabase.table('messages').insert(msg_data).execute()
 
         logger.info(f"Inbound processed: conv={conversation_id}, case={case_id}, needs_class={needs_classification}")
@@ -359,33 +370,31 @@ async def _download_openwa_media(server_url: str, api_key: str, session_id: str,
 
 # ── OpenWA LID Resolver ────────────────────────────────────────
 
-async def _resolve_openwa_lid(session_id: str, lid: str) -> dict:
+async def _resolve_openwa_lid(session_id: str, lid: str, tenant_id: str = None) -> dict:
     """Try to resolve an anonymized LID to a real phone number via OpenWA contacts API.
 
     Calls: GET /api/sessions/{sessionId}/contacts/{lid}@lid
     Returns: {"phone": "34694293833", "name": "Juan Jose Ruiz Fernandez"} or None
     """
     try:
-        # Get OpenWA credentials
+        # Get OpenWA credentials — prefer the tenant's account if tenant_id provided
         sb = get_supabase_admin()
-        acc = sb.table('whatsapp_accounts').select(
-            'openwa_server_url, openwa_session_id'
-        ).eq('openwa_session_id', session_id).eq('connection_type', 'openwa').limit(1).execute()
+        query = sb.table('whatsapp_accounts').select(
+            'id, openwa_server_url, openwa_session_id'
+        ).eq('openwa_session_id', session_id).eq('connection_type', 'openwa')
+        if tenant_id:
+            query = query.eq('tenant_id', tenant_id)
+        # Prefer the most recently validated account when multiple tenants share the same session
+        acc = query.order('last_validation_at', desc=True).limit(1).execute()
         if not acc.data:
             return None
 
         server_url = acc.data[0].get('openwa_server_url', '')
-        acc_id = acc.data[0].get('openwa_session_id', '')
+        account_id = acc.data[0].get('id', '')
 
-        # Get API key
+        # Get API key using the real account id
         secrets = sb.table('whatsapp_secrets').select('encrypted_openwa_api_key').eq(
-            'whatsapp_account_id', acc_id).limit(1).execute()
-        if not secrets.data:
-            # Try by account id
-            accounts = sb.table('whatsapp_accounts').select('id').eq('openwa_session_id', session_id).limit(1).execute()
-            if accounts.data:
-                secrets = sb.table('whatsapp_secrets').select('encrypted_openwa_api_key').eq(
-                    'whatsapp_account_id', accounts.data[0]['id']).limit(1).execute()
+            'whatsapp_account_id', account_id).limit(1).execute()
 
         if not secrets.data or not secrets.data[0].get('encrypted_openwa_api_key'):
             return None
@@ -452,9 +461,10 @@ async def receive_openwa_webhook(request: Request):
         msg_type = data.get('type', 'chat')
         logger.info(f"OpenWA webhook: event={payload.get('event')} type={msg_type} hasMedia={data.get('hasMedia')} keys={list(data.keys())} media_keys={list(data.get('media', {}).keys()) if isinstance(data.get('media'), dict) else type(data.get('media')).__name__} media={str(data.get('media'))[:300]}")
 
-        # Only handle message.received events
-        if payload.get('event') != 'message.received':
-            return {"status": "ignored", "reason": f"event={payload.get('event')}"}
+        # Handle message.received (incoming) and message.sent (outgoing from phone)
+        event = payload.get('event', '')
+        if event not in ('message.received', 'message.sent'):
+            return {"status": "ignored", "reason": f"event={event}"}
 
         if not data:
             return {"status": "ignored", "reason": "no data"}
@@ -475,8 +485,30 @@ async def receive_openwa_webhook(request: Request):
         from_id = data.get('from', '')
         to_id = data.get('to', '')
 
+        # ── Detect mobile-sent messages ──────────────────────────
+        # When an agent replies from their phone WhatsApp Business app,
+        # OpenWA sees it as an incoming message where 'from' = business number.
+        # Compare sender against configured business phone to identify these.
+        direction = 'incoming'
+        sender_number = None
+        recipient_number = None
+        business_phone = WHATSAPP_BUSINESS_PHONE_NUMBER.strip()
+
+        if business_phone:
+            from_clean = normalize_phone(from_id.replace('@c.us', '')) if '@c.us' in from_id else normalize_phone(from_id)
+            to_clean = normalize_phone(to_id.replace('@c.us', '')) if '@c.us' in to_id else normalize_phone(to_id)
+            if from_clean == business_phone:
+                direction = 'outbound_from_mobile'
+                sender_number = from_clean
+                recipient_number = to_clean
+                logger.info(f"📱 OpenWA: Mobile-sent message detected — from={from_clean} (business) to={to_clean} (customer)")
+
         phone = ''
-        if '@c.us' in chat_id:
+        # If mobile-sent, the customer is in 'to' field (the recipient)
+        if direction == 'outbound_from_mobile' and '@c.us' in to_id:
+            phone = normalize_phone(to_id.replace('@c.us', ''))
+            logger.info(f"OpenWA mobile: using recipient as customer phone={phone}")
+        elif '@c.us' in chat_id:
             candidate = normalize_phone(chat_id.replace('@c.us', ''))
             to_phone = normalize_phone(to_id.replace('@c.us', '')) if '@c.us' in to_id else ''
             if candidate != to_phone:
@@ -485,10 +517,22 @@ async def receive_openwa_webhook(request: Request):
         if not phone and '@c.us' in from_id:
             phone = normalize_phone(from_id.replace('@c.us', ''))
 
+        # Resolve tenant early — needed for LID resolution
+        # Order by last_validation_at DESC to pick the most recently used account
+        # when multiple tenants share the same OpenWA session
+        sb_early = get_supabase_admin()
+        _tenant_id = None
+        if session_id:
+            acc_res = sb_early.table('whatsapp_accounts').select('tenant_id, id').eq(
+                'openwa_session_id', session_id
+            ).eq('connection_type', 'openwa').order('last_validation_at', desc=True).limit(1).execute()
+            if acc_res.data:
+                _tenant_id = acc_res.data[0].get('tenant_id')
+
         if not phone and '@lid' in chat_id:
             # Try to resolve LID to real phone via OpenWA contacts API
             lid_raw = normalize_phone(chat_id.replace('@lid', ''))
-            resolved = await _resolve_openwa_lid(session_id, lid_raw)
+            resolved = await _resolve_openwa_lid(session_id, lid_raw, tenant_id=_tenant_id)
             if resolved:
                 phone = resolved['phone']
                 contact_name = resolved['name']
@@ -502,7 +546,7 @@ async def receive_openwa_webhook(request: Request):
             logger.error(f"OpenWA: could not resolve identity — chatId={chat_id} from={from_id}")
             return {"status": "ignored", "reason": "cannot resolve identity"}
 
-        logger.info(f"OpenWA resolved identity: phone={phone} (from chatId={chat_id} from={from_id})")
+        logger.info(f"OpenWA resolved identity: phone={phone} direction={direction} (from chatId={chat_id} from={from_id})")
         msg_type = data.get('type', 'chat')
         has_media = data.get('hasMedia', False)
         media_url = None
@@ -545,17 +589,8 @@ async def receive_openwa_webhook(request: Request):
         if len(processed_messages) > 10000:
             processed_messages.clear()
 
-        # Resolve tenant by OpenWA session ID
-        sb = get_supabase_admin()
-        tenant_id = None
-        if session_id:
-            acc_res = sb.table('whatsapp_accounts').select('tenant_id, id').eq(
-                'openwa_session_id', session_id
-            ).eq('connection_type', 'openwa').limit(1).execute()
-            if acc_res.data:
-                tenant_id = acc_res.data[0].get('tenant_id')
-
-        # Build inbound message and process
+        # Build inbound message and process (tenant_id resolved above)
+        tenant_id = _tenant_id
         from models import WhatsAppInboundMessage
         message = WhatsAppInboundMessage(
             phone=phone,
@@ -568,9 +603,11 @@ async def receive_openwa_webhook(request: Request):
         )
 
         # Use existing process_inbound_message with the resolved tenant context
-        await process_inbound_message(message, recv_phone_id=None, tenant_id=tenant_id)
+        await process_inbound_message(message, recv_phone_id=None, tenant_id=tenant_id,
+                                     direction=direction, sender_number=sender_number,
+                                     recipient_number=recipient_number)
 
-        return {"status": "processed", "message_id": msg_id}
+        return {"status": "processed", "message_id": msg_id, "direction": direction}
 
     except Exception as e:
         logger.error(f"OpenWA webhook error: {e}")
