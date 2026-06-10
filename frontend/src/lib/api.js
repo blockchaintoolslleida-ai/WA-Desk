@@ -130,4 +130,22 @@ export const adminApi = {
   contactsImport: (contacts) => api.post('/admin/contacts/import', { contacts }),
 };
 
+export const automationApi = {
+  // Rules
+  getRules: () => api.get('/admin/automation/rules'),
+  createRule: (data) => api.post('/admin/automation/rules', data),
+  updateRule: (id, data) => api.put(`/admin/automation/rules/${id}`, data),
+  deleteRule: (id) => api.delete(`/admin/automation/rules/${id}`),
+  toggleRule: (id) => api.patch(`/admin/automation/rules/${id}/toggle`),
+  reorderRules: (data) => api.put('/admin/automation/rules/reorder', data),
+  // Business Hours
+  getBusinessHours: () => api.get('/admin/automation/business-hours'),
+  updateBusinessHours: (data) => api.put('/admin/automation/business-hours', data),
+  // Assignment
+  getAssignment: () => api.get('/admin/automation/assignment'),
+  updateAssignment: (data) => api.put('/admin/automation/assignment', data),
+  // Logs
+  getLogs: (limit = 50) => api.get(`/admin/automation/logs?limit=${limit}`),
+};
+
 export default api;
