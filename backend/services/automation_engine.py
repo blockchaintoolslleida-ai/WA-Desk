@@ -269,10 +269,10 @@ async def _execute_rule(
             f"Automation: rule '{rule['name']}' matched, delaying {delay_seconds}s"
         )
         asyncio.create_task(_delayed_send(
-            response_text, message_data, tenant_id, delay_seconds
+            response_text, message_data, tenant_id, delay_seconds, conversation_id
         ))
     else:
-        await _send_automation_reply(response_text, message_data, tenant_id)
+        await _send_automation_reply(response_text, message_data, tenant_id, conversation_id)
 
     logger.info(f"Automation fired: {rule['category']} → '{rule['name']}'")
 
@@ -285,17 +285,20 @@ async def _execute_rule(
 
 
 async def _delayed_send(
-    response_text: str, message_data: dict, tenant_id: str, delay_seconds: int
+    response_text: str, message_data: dict, tenant_id: str, delay_seconds: int,
+    conversation_id: str = None,
 ):
     """Send after a delay (fire-and-forget background task)."""
     await asyncio.sleep(delay_seconds)
-    await _send_automation_reply(response_text, message_data, tenant_id)
+    await _send_automation_reply(response_text, message_data, tenant_id, conversation_id)
 
 
 async def _send_automation_reply(
-    response_text: str, message_data: dict, tenant_id: str
+    response_text: str, message_data: dict, tenant_id: str,
+    conversation_id: str = None,
 ):
-    """Send the auto-response via the existing WhatsApp service."""
+    """Send the auto-response via the existing WhatsApp service and store in DB."""
+    import uuid as _uuid
     try:
         from services.whatsapp import send_whatsapp_message
         from models import WhatsAppOutboundMessage
@@ -307,6 +310,32 @@ async def _send_automation_reply(
 
         msg = WhatsAppOutboundMessage(phone=phone, body=response_text)
         result = await send_whatsapp_message(msg, tenant_id=tenant_id)
+
+        # Store the auto-response in the messages table so it appears in chat
+        now = datetime.now(timezone.utc).isoformat()
+        msg_data = {
+            'id': str(_uuid.uuid4()),
+            'conversation_id': conversation_id,
+            'direction': 'outgoing',
+            'message_type': 'text',
+            'body': response_text,
+            'needs_classification': 0,
+            'sent_at': now,
+            'created_at': now,
+        }
+        if result.get('wamid'):
+            msg_data['whatsapp_message_id'] = result['wamid']
+        if not result.get('ok'):
+            msg_data['delivery_status'] = 'failed'
+            msg_data['delivery_error'] = result.get('error', '')[:200]
+        else:
+            msg_data['delivery_status'] = 'sent'
+
+        from database import get_supabase_admin
+        sb = get_supabase_admin()
+        sb.table('messages').insert(msg_data).execute()
+        logger.info(f"Automation reply stored in DB: conv={conversation_id}")
+
         if not result.get('ok'):
             logger.error(f"Automation send failed: {result.get('error')}")
     except Exception as e:
