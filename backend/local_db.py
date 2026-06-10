@@ -29,7 +29,7 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = int(os.environ.get("JWT_EXPIRATION_HOURS", "24"))
 
 # JSONB columns that need auto-parsing from TEXT storage
-JSON_COLUMNS = {'old_value', 'new_value', 'payload_json'}
+JSON_COLUMNS = {'old_value', 'new_value', 'payload_json', 'trigger_config', 'schedule', 'agent_pool'}
 
 # Columns known to be booleans (stored as INTEGER 0/1 in SQLite)
 BOOL_COLUMNS = {'is_active', 'needs_classification', 'unread_count', 'email_confirm'}
@@ -851,6 +851,59 @@ CREATE TABLE IF NOT EXISTS reminder_log (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- Automation tables (Section 5: Messaging Automation)
+CREATE TABLE IF NOT EXISTS automation_rules (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    category TEXT NOT NULL CHECK (category IN ('greeting', 'schedule', 'keywords', 'fallback')),
+    name TEXT NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 1,
+    trigger_config TEXT NOT NULL DEFAULT '{}',
+    response_text TEXT,
+    delay_seconds INTEGER DEFAULT 0,
+    daily_limit INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_rules_tenant ON automation_rules(tenant_id, category, priority);
+
+CREATE TABLE IF NOT EXISTS business_hours (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
+    timezone TEXT NOT NULL DEFAULT 'Europe/Madrid',
+    schedule TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS assignment_config (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
+    is_enabled INTEGER DEFAULT 0,
+    timeout_minutes INTEGER DEFAULT 5,
+    strategy TEXT NOT NULL DEFAULT 'round_robin',
+    agent_pool TEXT DEFAULT '[]',
+    last_assigned_index INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS automation_logs (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    rule_id TEXT REFERENCES automation_rules(id) ON DELETE SET NULL,
+    conversation_id TEXT,
+    message_id TEXT,
+    category TEXT,
+    triggered_at TEXT DEFAULT (datetime('now')),
+    response_preview TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_logs_tenant_date ON automation_logs(tenant_id, triggered_at);
+CREATE INDEX IF NOT EXISTS idx_automation_logs_rule ON automation_logs(rule_id, triggered_at);
 
 -- Legacy tables referenced by setup.py seed cleanup
 CREATE TABLE IF NOT EXISTS internal_notes (
