@@ -163,11 +163,12 @@ async def _evaluate_schedule_trigger(
 
 
 def _evaluate_keywords_trigger(trigger_config: dict, message_body: str) -> bool:
-    """Check if message contains any of the configured keywords."""
+    """Check if message contains any of the configured keywords (case-insensitive)."""
     keywords = trigger_config.get('keywords', [])
     if not keywords or not message_body:
         return False
-    return any(kw.lower() in message_body for kw in keywords)
+    body_lower = message_body.lower()
+    return any(kw.lower() in body_lower for kw in keywords)
 
 
 # ── Schedule Helper ────────────────────────────────────────────
