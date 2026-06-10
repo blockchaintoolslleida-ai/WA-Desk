@@ -15,6 +15,7 @@ from config import WHATSAPP_VERIFY_TOKEN, WHATSAPP_BUSINESS_PHONE_NUMBER
 from services.whatsapp import parse_webhook_payload, mark_message_as_read, normalize_phone
 from services.media import process_incoming_media
 from services.secrets_manager import decrypt_value
+from services.automation_engine import evaluate_and_execute
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp"])
@@ -237,6 +238,24 @@ async def process_inbound_message(message, recv_phone_id=None, tenant_id=None, d
         if recipient_number:
             msg_data['recipient_number'] = recipient_number
         supabase.table('messages').insert(msg_data).execute()
+
+        # ── Automation Engine: evaluate auto-response rules ─────
+        # Only fire for incoming messages (not outbound_from_mobile)
+        if direction == 'incoming':
+            try:
+                automation_result = await evaluate_and_execute(
+                    resolved_tenant_id,
+                    conversation_id,
+                    {'body': message.body, 'phone': phone},
+                    contact_id=contact_id,
+                )
+                if automation_result:
+                    logger.info(
+                        f"Automation fired: {automation_result.get('category')}"
+                        f" → {automation_result.get('rule_name')}"
+                    )
+            except Exception as auto_err:
+                logger.error(f"Automation engine error (non-fatal): {auto_err}")
 
         logger.info(f"Inbound processed: conv={conversation_id}, case={case_id}, needs_class={needs_classification}")
 
