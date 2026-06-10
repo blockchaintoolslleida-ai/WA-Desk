@@ -4,7 +4,7 @@ import { useTranslation } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import AppHeader from '../components/AppHeader';
 import { adminApi } from '../lib/api';
-import { Gear, LinkSimple, ClockCounterClockwise, CheckCircle, XCircle, CaretRight, ArrowLeft, ChatText, Buildings, DownloadSimple } from '@phosphor-icons/react';
+import { Gear, LinkSimple, ClockCounterClockwise, CheckCircle, XCircle, CaretRight, ArrowLeft, ChatText, Buildings, DownloadSimple, Lightning } from '@phosphor-icons/react';
 
 import AccountSection from './admin/AccountSection';
 import TemplatesSection from './admin/TemplatesSection';
@@ -13,10 +13,12 @@ import AuditSection from './admin/AuditSection';
 import TenantSetupForm from './admin/TenantSetupForm';
 import CompaniesSection from './admin/CompaniesSection';
 import ContactsImportSection from './admin/ContactsImportSection';
+import AutomationSection from './admin/AutomationSection';
 
 const NAV_ITEMS = [
   { id: 'account', icon: Gear, key: 'admin.nav.account' },
   { id: 'templates', icon: ChatText, key: 'admin.nav.templates' },
+  { id: 'automation', icon: Lightning, key: 'admin.nav.automation' },
   { id: 'webhook', icon: LinkSimple, key: 'admin.nav.webhook' },
   { id: 'logs', icon: ClockCounterClockwise, key: 'admin.nav.logs' },
 ];
@@ -150,6 +152,7 @@ export default function AdminPage() {
             <div className="max-w-3xl mx-auto p-6">
               {section === 'account' && <AccountSection t={t} locale={locale} />}
               {section === 'templates' && <TemplatesSection t={t} />}
+              {section === 'automation' && <AutomationSection t={t} locale={locale} />}
               {section === 'webhook' && <WebhookSection t={t} />}
               {section === 'logs' && <AuditSection t={t} locale={locale} />}
               {section === 'companies' && <CompaniesSection t={t} />}
