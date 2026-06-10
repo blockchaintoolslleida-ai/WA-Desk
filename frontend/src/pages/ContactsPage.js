@@ -91,7 +91,7 @@ export default function ContactsPage() {
 
   return (
     <div className="h-screen flex flex-col bg-[#F8FAFC]">
-      <AppHeader currentPage="contacts" onNavigate={(p) => navigate(p === 'dashboard' ? '/dashboard' : p === 'contacts' ? '/contacts' : p === 'agents' ? '/agents' : p === 'admin' ? '/admin' : '/')} />
+      <AppHeader currentPage="contacts" onNavigate={(p) => navigate(p === 'dashboard' ? '/dashboard' : p === 'contacts' ? '/contacts' : p === 'calendar' ? '/calendar' : p === 'agents' ? '/agents' : p === 'admin' ? '/admin' : '/')} />
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto">

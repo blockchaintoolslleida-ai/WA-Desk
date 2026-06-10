@@ -9,6 +9,7 @@ import DashboardPage from "./pages/DashboardPage";
 import AgentsPage from "./pages/AgentsPage";
 import AdminPage from "./pages/AdminPage";
 import ContactsPage from "./pages/ContactsPage";
+import CalendarPage from "./pages/CalendarPage";
 import SetupPage from "./pages/SetupPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 
@@ -50,6 +51,7 @@ function App() {
           <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
           <Route path="/contacts" element={<ProtectedRoute><ContactsPage /></ProtectedRoute>} />
+          <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <Toaster position="top-right" richColors />

@@ -64,7 +64,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
-      <AppHeader currentPage="admin" onNavigate={(p) => navigate(p === 'dashboard' ? '/dashboard' : p === 'contacts' ? '/contacts' : p === 'agents' ? '/agents' : p === 'admin' ? '/admin' : '/')} />
+      <AppHeader currentPage="admin" onNavigate={(p) => navigate(p === 'dashboard' ? '/dashboard' : p === 'contacts' ? '/contacts' : p === 'calendar' ? '/calendar' : p === 'agents' ? '/agents' : p === 'admin' ? '/admin' : '/')} />
 
       <div className="flex h-[calc(100vh-48px)]">
         <aside data-testid="admin-sidebar" className="w-56 bg-white border-r border-[#E2E8F0] flex-shrink-0 flex flex-col">

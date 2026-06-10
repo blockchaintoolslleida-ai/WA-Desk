@@ -29,6 +29,12 @@ JWT_EXPIRATION_HOURS = 24
 # CORS Configuration
 CORS_ORIGINS = os.environ.get('CORS_ORIGINS', '*').split(',')
 
+# Google Calendar Integration
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+GOOGLE_REDIRECT_URI = os.environ.get('GOOGLE_REDIRECT_URI', 'http://localhost:8000/api/calendar/oauth2callback')
+GOOGLE_POLLING_INTERVAL_MINUTES = int(os.environ.get('GOOGLE_POLLING_INTERVAL_MINUTES', '15'))
+
 # App Settings
 APP_NAME = "WhatsApp Business Desk"
 APP_VERSION = "1.0.0"

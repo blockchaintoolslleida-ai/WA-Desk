@@ -826,6 +826,32 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS reminder_settings (
+    tenant_id TEXT PRIMARY KEY,
+    is_active INTEGER DEFAULT 1,
+    lead_time_hours INTEGER DEFAULT 24,
+    template_text TEXT DEFAULT 'Hola {{client_name}}, le recordamos su cita: {{event_title}} el dia {{event_date}} a las {{event_time}}. Por favor confirme su asistencia.',
+    notification_window_minutes INTEGER DEFAULT 30,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reminder_log (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    contact_phone TEXT NOT NULL,
+    google_event_id TEXT NOT NULL,
+    event_title TEXT,
+    event_start TEXT,
+    scheduled_for TEXT,
+    sent_at TEXT,
+    status TEXT DEFAULT 'pending',
+    error_message TEXT,
+    retry_count INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- Legacy tables referenced by setup.py seed cleanup
 CREATE TABLE IF NOT EXISTS internal_notes (
     id TEXT PRIMARY KEY
@@ -866,6 +892,9 @@ CREATE INDEX IF NOT EXISTS idx_api_logs_tenant ON whatsapp_api_logs(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_webhook_logs_account ON whatsapp_webhook_logs(whatsapp_account_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_accounts_phone ON whatsapp_accounts(phone_number_id);
+CREATE INDEX IF NOT EXISTS idx_reminder_log_tenant_status ON reminder_log(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_reminder_log_scheduled ON reminder_log(scheduled_for);
+CREATE INDEX IF NOT EXISTS idx_reminder_log_event ON reminder_log(tenant_id, google_event_id);
 """
 
 
@@ -936,6 +965,8 @@ def _migrate_schema(conn):
         "ALTER TABLE contacts ADD COLUMN source TEXT DEFAULT ''",
         "ALTER TABLE messages ADD COLUMN sender_number TEXT",
         "ALTER TABLE messages ADD COLUMN recipient_number TEXT",
+        "ALTER TABLE oauth_tokens ADD COLUMN calendar_email TEXT DEFAULT ''",
+        "ALTER TABLE oauth_tokens ADD COLUMN calendar_id TEXT DEFAULT 'primary'",
     ]
     for sql in migrations:
         try:

@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from '../contexts/LanguageContext';
 import { casesApi, contactsApi } from '../lib/api';
-import { User, Phone, EnvelopeSimple, Clock, PlusCircle, CaretDown, UserCircle, NotePencil, ListBullets, Tag, WarningCircle, PencilSimple, Check, X, NoteBlank, Trash } from '@phosphor-icons/react';
+import { User, Phone, EnvelopeSimple, Clock, PlusCircle, CaretDown, UserCircle, NotePencil, ListBullets, Tag, WarningCircle, PencilSimple, Check, X, NoteBlank, Trash, Funnel } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 const STATUS_COLORS = {
@@ -26,8 +26,44 @@ export default function DetailPanel({ conversation, agents, currentUserId, selec
   const [editingNoteText, setEditingNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [confirmDeleteNote, setConfirmDeleteNote] = useState(null);
+  const [showCaseFilter, setShowCaseFilter] = useState(false);
+  const [caseStatusFilter, setCaseStatusFilter] = useState([]);
+  const caseFilterRef = useRef(null);
   const contact = conversation?.contact || {};
-  const cases = conversation?.cases || [];
+  const allCases = conversation?.cases || [];
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (caseFilterRef.current && !caseFilterRef.current.contains(e.target)) {
+        setShowCaseFilter(false);
+      }
+    };
+    if (showCaseFilter) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showCaseFilter]);
+
+  const CASE_STATUSES = [
+    { key: 'nou', label: t('case.status_nou') || 'Nou' },
+    { key: 'per_atendre', label: t('case.status_per_atendre') || 'Per atendre' },
+    { key: 'en_atencio', label: t('case.status_en_atencio') || "En atencio" },
+    { key: 'esperant_client', label: t('case.status_esperant_client') || 'Esperant client' },
+    { key: 'resolt', label: t('case.status_resolt') || 'Resolt' },
+    { key: 'tancat', label: t('case.status_tancat') || 'Tancat' },
+  ];
+
+  const toggleCaseStatus = (key) => {
+    setCaseStatusFilter(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  // Filter cases by selected statuses
+  const cases = caseStatusFilter.length > 0
+    ? allCases.filter(c => caseStatusFilter.includes(c.status))
+    : allCases;
+
+  const activeFilterCount = caseStatusFilter.length;
   const selectedCase = cases.find(c => c.id === selectedCaseId);
 
   useEffect(() => {
@@ -37,6 +73,11 @@ export default function DetailPanel({ conversation, agents, currentUserId, selec
       casesApi.registerView(selectedCaseId).catch(() => {});
     }
   }, [selectedCaseId]);
+
+  // Reset case filter when conversation changes
+  useEffect(() => {
+    setCaseStatusFilter([]);
+  }, [conversation?.id]);
 
   const handleAddNote = async (e) => {
     e.preventDefault();
@@ -116,13 +157,34 @@ export default function DetailPanel({ conversation, agents, currentUserId, selec
         {/* CASES TAB */}
         {tab === 'cases' && (
           <div className="space-y-3">
-            {/* Case list */}
+            {/* Case list header */}
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-bold uppercase tracking-wide text-[#64748B]">{t('case.title')} ({cases.length})</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wide text-[#64748B]">{t('case.title')} ({allCases.length})</h3>
               <button data-testid="create-case-btn" onClick={onCreateCase} className="flex items-center gap-1 text-[10px] font-medium text-[#2563EB] hover:underline">
                 <PlusCircle size={14} /> {t('case.new')}
               </button>
             </div>
+
+            {/* Case status filter buttons — like the left sidebar */}
+            <div className="flex flex-wrap gap-1 mb-2">
+              {CASE_STATUSES.map(s => (
+                <button
+                  key={s.key}
+                  onClick={() => toggleCaseStatus(s.key)}
+                  className={`px-2 py-0.5 text-[10px] rounded-md transition-colors ${caseStatusFilter.includes(s.key) ? 'bg-[#0F172A] text-white' : 'text-[#475569] hover:bg-[#F1F5F9] border border-[#E2E8F0]'}`}
+                >
+                  {s.label}
+                </button>
+              ))}
+              {activeFilterCount > 0 && (
+                <button onClick={() => setCaseStatusFilter([])} className="px-2 py-0.5 text-[10px] rounded-md text-red-500 hover:bg-red-50 transition-colors">
+                  ✕ {t('filter.clear') || 'Netejar'}
+                </button>
+              )}
+            </div>
+            {activeFilterCount > 0 && cases.length === 0 && (
+              <p className="text-xs text-[#64748B] text-center py-2">{t('case.no_match') || 'Cap cas amb aquest estat'}</p>
+            )}
 
             {conversation.unclassified_count > 0 && (
               <div className="flex items-center gap-1.5 p-2 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-700">

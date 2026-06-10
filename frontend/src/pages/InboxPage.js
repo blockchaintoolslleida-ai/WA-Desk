@@ -103,12 +103,13 @@ export default function InboxPage() {
       const currentId = selectedIdRef.current;
       if (currentId) {
         await loadMessages(currentId);
+        await loadConvDetail(currentId);
       }
     };
 
     pollRef.current = setInterval(poll, 6000);
     return () => clearInterval(pollRef.current);
-  }, [loadConversations, loadMessages]);
+  }, [loadConversations, loadMessages, loadConvDetail]);
 
   // Load conversation detail when selection changes
   useEffect(() => {
@@ -193,7 +194,7 @@ export default function InboxPage() {
 
   return (
     <div className="h-screen flex flex-col bg-[#F8FAFC]">
-      <AppHeader currentPage="inbox" onNavigate={(p) => navigate(p === 'dashboard' ? '/dashboard' : p === 'contacts' ? '/contacts' : p === 'agents' ? '/agents' : p === 'admin' ? '/admin' : '/')} />
+      <AppHeader currentPage="inbox" onNavigate={(p) => navigate(p === 'dashboard' ? '/dashboard' : p === 'contacts' ? '/contacts' : p === 'calendar' ? '/calendar' : p === 'agents' ? '/agents' : p === 'admin' ? '/admin' : '/')} />
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left */}

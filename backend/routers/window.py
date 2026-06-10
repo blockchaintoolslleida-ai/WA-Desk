@@ -169,26 +169,38 @@ async def send_template(
     body = template["languages"][lang]
     body = body.replace("{{1}}", req.variables.get("customer_name", customer_name))
 
-    # Try sending as template first, fallback to regular message
-    wa_sent = await send_whatsapp_template(
-        phone=normalize_phone(phone),
-        template_name=template["name"],
-        language_code=lang,
-        components=[{"type": "body", "parameters": [{"type": "text", "text": customer_name}]}],
-        tenant_id=user.get('tenant_id'),
-    )
+    # For OpenWA, skip template API — just send the message body directly
+    from services.tenant_credentials import get_tenant_connection_config
+    config = get_tenant_connection_config(user.get('tenant_id'))
 
-    # If template fails (not approved yet), send as regular text with warning
-    if not wa_sent:
-        logger.warning("Template send failed, falling back to text message")
-        fallback = await send_whatsapp_message(
+    if config.get('connection_type') == 'openwa':
+        # OpenWA: no templates, no 24h restriction — send message directly
+        wa_result = await send_whatsapp_message(
             WhatsAppOutboundMessage(phone=normalize_phone(phone), body=body),
             tenant_id=user.get('tenant_id'),
         )
-        wa_sent = fallback.get('ok', False) if isinstance(fallback, dict) else bool(fallback)
-        wa_error = fallback.get('error') if isinstance(fallback, dict) else None
+        wa_sent = wa_result.get('ok', False)
+        wa_error = wa_result.get('error') if not wa_sent else None
     else:
-        wa_error = None
+        # Meta: try template first, fallback to regular message
+        wa_sent = await send_whatsapp_template(
+            phone=normalize_phone(phone),
+            template_name=template["name"],
+            language_code=lang,
+            components=[{"type": "body", "parameters": [{"type": "text", "text": customer_name}]}],
+            tenant_id=user.get('tenant_id'),
+        )
+
+        if not wa_sent:
+            logger.warning("Template send failed, falling back to text message")
+            fallback = await send_whatsapp_message(
+                WhatsAppOutboundMessage(phone=normalize_phone(phone), body=body),
+                tenant_id=user.get('tenant_id'),
+            )
+            wa_sent = fallback.get('ok', False) if isinstance(fallback, dict) else bool(fallback)
+            wa_error = fallback.get('error') if isinstance(fallback, dict) else None
+        else:
+            wa_error = None
 
     now = datetime.now(timezone.utc).isoformat()
 

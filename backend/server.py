@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from routers import auth, conversations, messages, webhook, dashboard, agents, setup, cases, media, contacts, window, admin_platform, templates, contacts_import, media_proxy
+from routers import auth, conversations, messages, webhook, dashboard, agents, setup, cases, media, contacts, window, admin_platform, templates, contacts_import, media_proxy, calendar
 
 app = FastAPI(
     title="WhatsApp Business Desk",
@@ -364,6 +364,7 @@ api_router.include_router(templates.router)
 api_router.include_router(setup.router)
 api_router.include_router(contacts_import.router)
 api_router.include_router(media_proxy.router)
+api_router.include_router(calendar.router)
 
 app.include_router(api_router)
 
@@ -382,6 +383,7 @@ app.mount("/api/media/files", StaticFiles(directory=str(MEDIA_FILES_DIR)), name=
 
 import asyncio
 from routers.window import run_auto_reminder
+from services.calendar_watcher import watcher as calendar_watcher
 
 logging.basicConfig(
     level=logging.INFO,
@@ -403,6 +405,8 @@ async def startup_event():
     logger.info("WhatsApp Business Desk API starting...")
     asyncio.create_task(auto_reminder_loop())
     logger.info("Auto-reminder background task started (every 5 min)")
+    asyncio.create_task(calendar_watcher.start())
+    logger.info("Calendar watcher background task started")
 
 @app.on_event("shutdown")
 async def shutdown_event():

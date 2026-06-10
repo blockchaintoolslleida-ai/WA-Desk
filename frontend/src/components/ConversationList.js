@@ -28,11 +28,9 @@ export default function ConversationList({ conversations, selectedId, filter, se
     setCreating(true);
     try {
       const res = await contactsApi.create(newContact);
-      // Create a conversation for this contact
-      const convRes = await conversationsApi.create({ contact_id: res.data.id });
+      await conversationsApi.create({ contact_id: res.data.id });
       setShowNewContact(false);
       setNewContact({ name: '', phone: '' });
-      // Reload conversations
       window.location.reload();
     } catch (e) { console.error('Create contact failed:', e); }
     setCreating(false);

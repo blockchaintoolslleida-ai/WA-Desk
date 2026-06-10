@@ -7,6 +7,7 @@ const translations = {
     'nav.admin': 'Admin',
     'nav.logout': 'Tancar sessió',
     'nav.contacts': 'Contactes',
+    'nav.calendar': 'Calendar',
 
     // Contacts
     'contacts.title': 'Contactes',
@@ -58,6 +59,14 @@ const translations = {
     'filter.mine': 'Les meves',
     'filter.unread': 'No llegides',
     'filter.closed': 'Tancades',
+    'filter.cases': 'Casos',
+    'filter.clear': 'Netejar',
+    'case.status_nou': 'Nou',
+    'case.status_per_atendre': 'Per atendre',
+    'case.status_en_atencio': "En atencio",
+    'case.status_esperant_client': 'Esperant client',
+    'case.status_resolt': 'Resolt',
+    'case.status_tancat': 'Tancat',
 
     // Conversation list
     'conv.search_placeholder': 'Cercar nom o telèfon...',
@@ -558,6 +567,7 @@ const translations = {
     'nav.admin': 'Admin',
     'nav.logout': 'Cerrar sesión',
     'nav.contacts': 'Contactos',
+    'nav.calendar': 'Calendario',
 
     // Contacts
     'contacts.title': 'Contactos',
@@ -607,6 +617,14 @@ const translations = {
     'filter.mine': 'Las mías',
     'filter.unread': 'No leídas',
     'filter.closed': 'Cerradas',
+    'filter.cases': 'Casos',
+    'filter.clear': 'Limpiar',
+    'case.status_nou': 'Nuevo',
+    'case.status_per_atendre': 'Por atender',
+    'case.status_en_atencio': 'En atención',
+    'case.status_esperant_client': 'Esperando cliente',
+    'case.status_resolt': 'Resuelto',
+    'case.status_tancat': 'Cerrado',
 
     'conv.search_placeholder': 'Buscar nombre o teléfono...',
     'conv.no_results': 'Ninguna conversación encontrada',
@@ -1096,6 +1114,7 @@ const translations = {
     'nav.admin': 'Admin',
     'nav.logout': 'Log out',
     'nav.contacts': 'Contacts',
+    'nav.calendar': 'Calendar',
 
     // Contacts
     'contacts.title': 'Contacts',
@@ -1145,6 +1164,14 @@ const translations = {
     'filter.mine': 'Mine',
     'filter.unread': 'Unread',
     'filter.closed': 'Closed',
+    'filter.cases': 'Cases',
+    'filter.clear': 'Clear',
+    'case.status_nou': 'New',
+    'case.status_per_atendre': 'To attend',
+    'case.status_en_atencio': 'In progress',
+    'case.status_esperant_client': 'Waiting client',
+    'case.status_resolt': 'Resolved',
+    'case.status_tancat': 'Closed',
 
     'conv.search_placeholder': 'Search name or phone...',
     'conv.no_results': 'No conversations found',

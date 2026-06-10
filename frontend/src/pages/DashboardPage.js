@@ -33,7 +33,7 @@ export default function DashboardPage() {
 
   return (
     <div className="h-screen flex flex-col bg-[#F8FAFC]">
-      <AppHeader currentPage="dashboard" onNavigate={(p) => navigate(p === 'dashboard' ? '/dashboard' : p === 'contacts' ? '/contacts' : p === 'agents' ? '/agents' : p === 'admin' ? '/admin' : '/')} />
+      <AppHeader currentPage="dashboard" onNavigate={(p) => navigate(p === 'dashboard' ? '/dashboard' : p === 'contacts' ? '/contacts' : p === 'calendar' ? '/calendar' : p === 'agents' ? '/agents' : p === 'admin' ? '/admin' : '/')} />
       <div className="flex-1 overflow-y-auto p-6">
         <h1 data-testid="dashboard-title" className="text-2xl font-bold tracking-tight mb-6" style={{ fontFamily: 'Manrope' }}>{t('dash.title')}</h1>
         {loading ? <p className="text-sm text-[#64748B]">{t('dash.loading')}</p> : metrics ? (
