@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime, timezone
 import uuid
+import json
 from database import get_supabase_admin
 from config import WHATSAPP_VERIFY_TOKEN, WHATSAPP_BUSINESS_PHONE_NUMBER
 from services.whatsapp import parse_webhook_payload, mark_message_as_read, normalize_phone
@@ -207,6 +208,23 @@ async def process_inbound_message(message, recv_phone_id=None, tenant_id=None, d
                 # No cases: message pending classification
                 needs_classification = True
 
+        # ── Resolve reply context: map wamid → internal message ID ──
+        reply_to_id = None
+        if message.reply_to_wamid:
+            try:
+                replied = supabase.table('messages').select('id').eq(
+                    'whatsapp_message_id', message.reply_to_wamid
+                ).limit(1).execute()
+                if replied.data:
+                    reply_to_id = replied.data[0]['id']
+                    # Auto-inherit case from the replied message
+                    replied_full = supabase.table('messages').select('case_id').eq('id', reply_to_id).single().execute()
+                    if replied_full.data and replied_full.data.get('case_id') and not case_id:
+                        case_id = replied_full.data['case_id']
+                    logger.info(f"Resolved reply: wamid={message.reply_to_wamid} → internal={reply_to_id}, case={case_id}")
+            except Exception as e:
+                logger.warning(f"Failed to resolve reply wamid {message.reply_to_wamid}: {e}")
+
         # Insert message
         # If media, download from WhatsApp and store locally
         stored_media_url = message.media_url
@@ -237,6 +255,8 @@ async def process_inbound_message(message, recv_phone_id=None, tenant_id=None, d
             msg_data['sender_number'] = sender_number
         if recipient_number:
             msg_data['recipient_number'] = recipient_number
+        if reply_to_id:
+            msg_data['reply_to_id'] = reply_to_id
         supabase.table('messages').insert(msg_data).execute()
 
         # ── Automation Engine: evaluate auto-response rules ─────
@@ -608,6 +628,21 @@ async def receive_openwa_webhook(request: Request):
         if len(processed_messages) > 10000:
             processed_messages.clear()
 
+        # Extract reply context (quoted message) from OpenWA data
+        # whatsapp-web.js v1.34.x uses 'quotedMessage' field directly (not hasQuotedMsg/quotedMsg)
+        reply_to_wamid = None
+        quoted_raw = data.get('quotedMessage')
+        if quoted_raw and isinstance(quoted_raw, dict):
+            qid = quoted_raw.get('id', '')
+            if isinstance(qid, dict):
+                reply_to_wamid = qid.get('_serialized', '')
+            elif isinstance(qid, str):
+                reply_to_wamid = qid
+            if reply_to_wamid:
+                logger.info(f"OpenWA reply context: quoted={reply_to_wamid}")
+            else:
+                logger.warning(f"OpenWA reply: quotedMessage present but could not extract ID: {json.dumps(quoted_raw, default=str)[:200]}")
+
         # Build inbound message and process (tenant_id resolved above)
         tenant_id = _tenant_id
         from models import WhatsAppInboundMessage
@@ -619,6 +654,7 @@ async def receive_openwa_webhook(request: Request):
             media_url=media_url,
             media_type=media_type,
             contact_name=contact_name,
+            reply_to_wamid=reply_to_wamid,
         )
 
         # Use existing process_inbound_message with the resolved tenant context

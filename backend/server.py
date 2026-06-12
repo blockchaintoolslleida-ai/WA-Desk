@@ -1,8 +1,8 @@
 """
 WhatsApp Business Desk - Main FastAPI Application
 """
-from fastapi import FastAPI, APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, APIRouter, Request
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -14,6 +14,8 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 from routers import auth, conversations, messages, webhook, dashboard, agents, setup, cases, media, contacts, window, admin_platform, templates, contacts_import, media_proxy, calendar, automation
+
+FRONTEND_DIR = ROOT_DIR.parent / 'frontend' / 'build'
 
 app = FastAPI(
     title="WhatsApp Business Desk",
@@ -382,6 +384,10 @@ MEDIA_FILES_DIR = ROOT_DIR / "media_files" / "media"
 MEDIA_FILES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/api/media/files", StaticFiles(directory=str(MEDIA_FILES_DIR)), name="media_files")
 
+# Serve frontend static files (JS, CSS, assets)
+if FRONTEND_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="frontend_static")
+
 import asyncio
 from routers.window import run_auto_reminder
 from services.calendar_watcher import watcher as calendar_watcher
@@ -412,3 +418,11 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("WhatsApp Business Desk API shutting down...")
+
+# SPA fallback: serve index.html for all non-API, non-static routes
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    index_path = FRONTEND_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    return HTMLResponse("<h1>Frontend not built</h1><p>Run <code>cd frontend && yarn build</code></p>", status_code=404)

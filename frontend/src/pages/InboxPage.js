@@ -100,16 +100,25 @@ export default function InboxPage() {
 
     const poll = async () => {
       await loadConversations();
+      // Only refresh messages when a conversation is selected
       const currentId = selectedIdRef.current;
       if (currentId) {
-        await loadMessages(currentId);
-        await loadConvDetail(currentId);
+        // Fetch messages only (conv detail + messages in one go)
+        try {
+          const [convRes, msgsRes] = await Promise.all([
+            conversationsApi.get(currentId),
+            conversationsApi.messages(currentId),
+          ]);
+          setSelectedConv(convRes.data);
+          setMessages(msgsRes.data || []);
+          // Only mark as read on initial load, not on every poll tick
+        } catch (e) { /* silent */ }
       }
     };
 
-    pollRef.current = setInterval(poll, 6000);
+    pollRef.current = setInterval(poll, 15000);
     return () => clearInterval(pollRef.current);
-  }, [loadConversations, loadMessages, loadConvDetail]);
+  }, [loadConversations]);
 
   // Load conversation detail when selection changes
   useEffect(() => {

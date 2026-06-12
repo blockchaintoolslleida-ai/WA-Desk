@@ -102,7 +102,8 @@ def parse_webhook_payload(payload: Dict[str, Any]) -> Optional[WhatsAppInboundMe
             timestamp=message.get('timestamp', ''),
             media_url=media_url,
             media_type=media_type,
-            contact_name=contact_name
+            contact_name=contact_name,
+            reply_to_wamid=(message.get('context') or {}).get('id'),
         )
         
     except Exception as e:
@@ -139,7 +140,8 @@ async def send_whatsapp_message(message: WhatsAppOutboundMessage, reply_to_wamid
             chat_id = phone[4:] + '@lid'
         else:
             chat_id = normalize_phone(phone) + '@c.us'
-        return await _send_openwa_text(server_url, api_key, session_id, chat_id, message.body)
+        return await _send_openwa_text(server_url, api_key, session_id, chat_id, message.body,
+                                        quoted_message_id=reply_to_wamid)
 
     # Meta path (default)
     token = config.get("access_token")
@@ -401,13 +403,36 @@ async def send_whatsapp_document(phone: str, media_id: str, filename: str, capti
 # ═══════════════════════════════════════════════════════════════════
 
 async def _send_openwa_text(server_url: str, api_key: str, session_id: str,
-                            chat_id: str, text: str) -> dict:
+                            chat_id: str, text: str,
+                            quoted_message_id: str = None) -> dict:
     """Send a text message via OpenWA REST API.
+
+    When quoted_message_id is provided, the /reply endpoint is used so WhatsApp
+    shows the message as a quoted reply. Falls back to /send-text if /reply fails.
 
     Returns: {"ok": bool, "error": str or None, "wamid": str or None}
     """
-    url = f"{server_url.rstrip('/')}/api/sessions/{session_id}/messages/send-text"
+    base = server_url.rstrip('/')
     headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
+
+    # If replying to a specific message, try the /reply endpoint first
+    if quoted_message_id:
+        reply_url = f"{base}/api/sessions/{session_id}/messages/reply"
+        reply_payload = {"chatId": chat_id, "text": text, "quotedMessageId": quoted_message_id}
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(reply_url, json=reply_payload, headers=headers)
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                msg_id = data.get("messageId") or data.get("id") or "openwa_reply_" + chat_id
+                logger.info(f"OpenWA reply sent to {chat_id} (quoted {quoted_message_id})")
+                return {"ok": True, "error": None, "wamid": msg_id}
+            logger.warning(f"OpenWA /reply failed ({resp.status_code}), falling back to send-text")
+        except Exception as e:
+            logger.warning(f"OpenWA /reply error: {e}, falling back to send-text")
+
+    # Fallback: plain send-text (no quoting)
+    url = f"{base}/api/sessions/{session_id}/messages/send-text"
     payload = {"chatId": chat_id, "text": text}
 
     try:

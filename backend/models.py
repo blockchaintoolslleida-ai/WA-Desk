@@ -82,6 +82,7 @@ class WhatsAppInboundMessage(BaseModel):
     media_url: Optional[str] = None
     media_type: Optional[str] = None
     contact_name: Optional[str] = None
+    reply_to_wamid: Optional[str] = None
 
 
 class WhatsAppOutboundMessage(BaseModel):
